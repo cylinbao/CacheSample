@@ -1,4 +1,5 @@
 import torch
+import os
 
 def save_model(args, model, filename):
     print("Model's state_dict info:")

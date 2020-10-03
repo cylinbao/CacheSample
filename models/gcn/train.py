@@ -10,7 +10,7 @@ from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
 from dgl.data import RedditDataset
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
-from utils import save_model, load_model
+from model_utils import save_model, load_model
 
 from gcn import GCN
 
