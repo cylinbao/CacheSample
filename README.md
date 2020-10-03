@@ -7,7 +7,7 @@ git clone --recurse-submodules https://github.com/uwsampl/gnn_benchmark.git
 ```
 If you already clone the project, update the submodules with
 ```
-submodule update --init --recursive
+git submodule update --init --recursive
 ```
 Build DGL
 ```
