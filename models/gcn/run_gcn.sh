@@ -1,7 +1,7 @@
 # able to achieve 94.45% accuracy on reddit dataset
 
 # training commend, modify parameters for your need
-python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --norm=right
+# python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --norm=right
 
 # inference commend, for the original kernel
 python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --norm=right --inference
