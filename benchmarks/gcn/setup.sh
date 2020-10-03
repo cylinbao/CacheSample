@@ -1,7 +1,7 @@
 #!/bin/zsh
 
 # Set your DGL root directory here
-REPO_ROOT="/home/cyulin2/gnn_benchmark"
+REPO_ROOT="$HOME/gnn_benchmark"
 DGL_DIR="$REPO_ROOT/dgl"
 
 # check modification on spmm.cu file
@@ -20,7 +20,7 @@ echo "Compile DGL source"
 if [ -d "$DGL_DIR/build" ]; then
     make -C $DGL_DIR/build
 else
-    mdir $DGL_DIR/build
+    mkdir $DGL_DIR/build
     cd $DGL_DIR/build
     cmake -DUSE_CUDA=ON .. 
     cd $CUD_DIR

@@ -589,21 +589,21 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
       int64_t x_length = 1;
       for (int i = 1; i < ufeat->ndim; ++i)
         x_length *= ufeat->shape[i];
-      /* SWITCH between cusparse and cache_sample kernel here
+      ///* SWITCH between cusparse and cache_sample kernel here
       cusparse::CusparseCsrmm2<IdType, DType>(
           ufeat->ctx, csr,
           static_cast<DType*>(ufeat->data),
           nullptr,
           static_cast<DType*>(out->data),
           x_length);
-      */
-      ///*
+      //*/
+      /*
       cusparse::CacheSampleCsrmm<IdType, DType>(
           ufeat->ctx, csr,
           static_cast<DType*>(ufeat->data),
           static_cast<DType*>(out->data),
           x_length, S);
-      //*/
+      */
     } else if (sizeof(IdType) == 4 && op == "mul" && efeat.NumElements() == csr.indices->shape[0]) {
       int64_t x_length = 1;
       for (int i = 1; i < ufeat->ndim; ++i)
