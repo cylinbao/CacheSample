@@ -1,6 +1,6 @@
 # Running OGB examples
 ## Preparing Python environments
-Create two virtual environments using following command:
+Create two at current directory virtual environments using following command:
 ```bash
 virtualenv -p /usr/bin/python3.7 base
 virtualenv -p /usr/bin/python3.7 custom
