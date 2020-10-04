@@ -17,6 +17,8 @@ import tqdm
 import traceback
 import json
 
+from typing import List, Dict, Tuple
+
 from load_graph import load_reddit, load_ogb, inductive_split
 
 STATE_DICT_PATH = "learned_param.pt"
@@ -49,7 +51,7 @@ class SAGE(nn.Module):
                 h = self.dropout(h)
         return h
 
-    def inference(self, g, x, batch_size, device):
+    def inference(self, g, x, batch_size, device) -> Tuple[th.Tensor, Dict[str, List[float]]]:
         """
         Inference with the GraphSAGE model on full neighbors (i.e. without neighbor sampling).
         g : the entire graph.
@@ -63,7 +65,8 @@ class SAGE(nn.Module):
         # Therefore, we compute the representation of all nodes layer by layer.  The nodes
         # on each layer are of course splitted in batches.
         # TODO: can we standardize this?
-        kernel = 0
+        total_time = []
+        kernel_time = []
         for l, layer in enumerate(self.layers):
             print(f"inferecing at layer: {l}")
             y = th.zeros(g.number_of_nodes(), self.n_hidden if l != len(self.layers) - 1 else self.n_classes)
@@ -78,30 +81,29 @@ class SAGE(nn.Module):
                 drop_last=False,
                 num_workers=0 if args.perf else args.num_workers)
 
-            if args.perf:
-                prof = th.autograd.profiler.profile(use_cuda=True).__enter__()
             for input_nodes, output_nodes, blocks in tqdm.tqdm(dataloader):
                 block = blocks[0]
 
                 block = block.int().to(device)
                 h = x[input_nodes].to(device)
-                h = layer(block, h)
-                if l != len(self.layers) - 1:
-                    h = self.activation(h)
-                    h = self.dropout(h)
-
+                with th.autograd.profiler.profile(enabled=args.perf, use_cuda=True) as prof:
+                    tic = time.time()
+                    h = layer(block, h)
+                    if l != len(self.layers) - 1:
+                        h = self.activation(h)
+                        h = self.dropout(h)
+                total_time.append(time.time() - tic)
+                if args.perf:
+                    # key_avg = prof.total_average()
+                    # cpu = key_avg.self_cpu_time_total
+                    # cuda = key_avg.cuda_time_total
+                    for evt in prof.key_averages():
+                        if evt.key == "GSpMM":
+                            kernel_time.append(evt.cuda_time*evt.count)
                 y[output_nodes] = h.cpu()
-            if args.perf:
-                prof.__exit__(None, None, None)
-                key_avg = prof.total_average()
-                cpu = key_avg.self_cpu_time_total
-                cuda = key_avg.cuda_time_total
-                for evt in prof.key_averages():
-                    if evt.key == "GSpMM":
-                        kernel += evt.cuda_time*evt.count
 
             x = y
-        return y, kernel
+        return y, {"kernel": kernel_time, "times": total_time}
 
 def compute_acc(pred, labels):
     """
@@ -208,21 +210,15 @@ def run(args, device, data):
     elif args.inference:
         model.load_state_dict(th.load(args.state_dict))
         model.eval()
-        times = []
-        kernel_all = 0
-        for _run in tqdm.tqdm(range(args.num_runs)):
-            tic = time.time()
-            with th.no_grad():
-                pred, kernel = model.inference(test_g, test_g.ndata['features'], args.batch_size, device)
-            times.append(time.time() - tic)
-            kernel_all += kernel
+        with th.no_grad():
+            pred, perf_stats = model.inference(test_g, test_g.ndata['features'], args.batch_size, device)
         test_acc = compute_acc(pred, test_g.ndata['labels'])
         stats = {
             "args": vars(args),
             "gnn": {
-                "time": times,
+                "time": perf_stats["times"],
                 "test_accs": test_acc.item(),
-                "kernel_time": kernel/args.num_runs
+                "kernel_time": perf_stats["kernel"]
             }
         }
         with open(f"{args.log_file}.json", "w") as file:

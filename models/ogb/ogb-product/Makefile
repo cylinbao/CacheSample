@@ -1,6 +1,6 @@
 SHELL = /bin/zsh
-BASE_PYTHON = base
-CUSTOM_PYTHON = sample-cache
+BASE_PYTHON = source ../base/bin/activate &&
+CUSTOM_PYTHON = source ../sample-cache/bin/activate &&
 N_EPOCH = 20
 N_RUNS = 2
 AGG = mean
@@ -9,6 +9,14 @@ HIDDEN = 256
 NORM_BASE = right
 NORM_CUSTOM = none
 S = 128
+USE_PERF = --perf
+ifdef NO_PERF
+	USE_PERF = --perf
+endif
+ifdef NO_VIRTUALENV
+	undefine BASE_PYTHON
+	undefine CUSTOM_PYTHON
+endif
 
 # train-gcn : FORCE
 # 	source ../$(BASE_PYTHON)/bin/activate && \
@@ -32,7 +40,7 @@ S = 128
 # 		--state-dict=$(STATE_DICT_NAME)_gcn.pt \
 # 		--num-hidden=$(HIDDEN) \
 # 		--log-file=gcn-base \
-# 		--perf
+# 		$(USE_PERF)
 
 # inference-gcn-samplecache : FORCE
 # 	source ../$(CUSTOM_PYTHON)/bin/activate && \
@@ -45,10 +53,10 @@ S = 128
 # 		--state-dict=$(STATE_DICT_NAME)_gcn.pt \
 # 		--num-hidden=$(HIDDEN) \
 # 		--log-file=gcn-$(S) \
-# 		--perf
+# 		$(USE_PERF)
 
 train-sage : FORCE
-	source ../$(BASE_PYTHON)/bin/activate && \
+	$(BASE_PYTHON) \
 	python main.py \
 		--num-epochs=$(N_EPOCH) \
 		--num-runs=$(N_RUNS) \
@@ -59,7 +67,7 @@ train-sage : FORCE
 		--num-hidden=$(HIDDEN)
 
 inference-sage-base : FORCE
-	source ../$(BASE_PYTHON)/bin/activate && \
+	$(BASE_PYTHON) \
 	python main.py \
 		--num-epochs=$(N_EPOCH) \
 		--num-runs=$(N_RUNS) \
@@ -68,11 +76,11 @@ inference-sage-base : FORCE
 		--norm=$(NORM_BASE) \
 		--state-dict=$(STATE_DICT_NAME)_sage.pt \
 		--num-hidden=$(HIDDEN) \
-		--log-file=sage-base
-		# --perf
+		--log-file=sage-base \
+		$(USE_PERF)
 
 inference-sage-samplecache : FORCE
-	source ../$(CUSTOM_PYTHON)/bin/activate && \
+	$(CUSTOM_PYTHON) \
 	python main.py \
 		--num-epochs=$(N_EPOCH) \
 		--num-runs=$(N_RUNS) \
@@ -81,14 +89,26 @@ inference-sage-samplecache : FORCE
 		--norm=$(NORM_CUSTOM) \
 		--state-dict=$(STATE_DICT_NAME)_sage.pt \
 		--num-hidden=$(HIDDEN) \
-		--log-file=sage-$(S)
-		# --perf
+		--log-file=sage-$(S) \
+		$(USE_PERF)
 
 gcn-kernel : FORCE
 	cp -f ./spmm-gcn.cu ./spmm.cu
 
 sage-kernel : FORCE
 	cp -f ./spmm-sage.cu ./spmm.cu
+
+install-gcn : gcn-kernel
+	cp -f sparse.py sparse-tmp.py
+	sed -i "s/S = 128/S = $(S)/" sparse-tmp.py
+	zsh setup.sh
+	rm -f sparse-tmp.py
+
+install-sage : sage-kernel
+	cp -f sparse.py sparse-tmp.py
+	sed -i "s/S = 128/S = $(S)/" sparse-tmp.py
+	zsh setup.sh
+	rm -f sparse-tmp.py
 
 .PHONY : all $(MAKECMDGOALS)
 

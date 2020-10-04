@@ -6,13 +6,13 @@ run_benchmark() {
         make train-${GNN}
     fi
 
-    if [${GNN} -eq == gcn]; then
-        Ss="16 32 64 128 256"
+    if [ "${GNN}" = "gcn" ]; then
+        Ss=(16 32 64 128 256)
     else
-        Ss="64 128 256 512 1024"
+        Ss=(64 128 256 512 1024)
     fi
     
-    for s in 16 32 64 128 256
+    for s in "${Ss[@]}"
     do
         # create temporary sparse.py file with different s for DGL
         cp -f sparse.py sparse-tmp.py
