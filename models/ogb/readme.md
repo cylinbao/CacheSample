@@ -17,3 +17,5 @@ Setup `LD_LIBRARY_PATH` with
 export LD_LIBRARY_PATH=/usr/local/cuda-11.0/lib64:/usr/local/cuda-11.0/lib:${LD_LIBRARY_PATH}
 ```
 and set `DGL_DIR` to your DGL repo.
+## Running benchmark
+See individual directory to run the benchmark.
