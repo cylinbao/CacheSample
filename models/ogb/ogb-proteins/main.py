@@ -21,7 +21,7 @@ import json
 
 from torch_sparse import SparseTensor
 
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 STATE_DICT_PATH = "learned_param_proteins.pt"
 
@@ -38,6 +38,35 @@ class GCN(nn.Module):
         for _ in range(n_layers):
             self.convs.append(dglnn.GraphConv(n_hidden, n_hidden, norm))
         self.convs.append(dglnn.GraphConv(n_hidden, n_classes, norm))
+
+        self.dropout = nn.Dropout(dropout)
+        self.activation = activation
+
+    def reset_parameters(self):
+        for conv in self.convs:
+            conv.reset_parameters()
+
+    def forward(self, graph, feat):
+        h = feat
+        for conv in self.convs[:-1]:
+            h = conv(graph, h)
+            h = self.activation(h)
+            h = self.dropout(h)
+        return self.convs[-1](graph, h)
+
+class SAGE(nn.Module):
+    def __init__(self, in_feats, n_hidden, n_classes, n_layers, activation, dropout, 
+                 agg_type):
+        super().__init__()
+        self.n_layers = n_layers
+        self.n_hidden = n_hidden
+        self.n_classes = n_classes
+
+        self.convs = nn.ModuleList()
+        self.convs.append(dglnn.SAGEConv(in_feats, n_hidden, agg_type))
+        for _ in range(n_layers):
+            self.convs.append(dglnn.SAGEConv(n_hidden, n_hidden, agg_type))
+        self.convs.append(dglnn.SAGEConv(n_hidden, n_classes, agg_type))
 
         self.dropout = nn.Dropout(dropout)
         self.activation = activation
@@ -99,57 +128,58 @@ def evaluate(model, graph, feat, labels, train_idx, val_idx, test_idx, evaluator
 def inference(args, device, graph, in_feats, n_classes, labels, train_idx, val_idx, test_idx, feat, evaluator):
     if args.sage:
         pass
-        # model = SAGE(in_feats, args.n_hidden, n_classes, args.n_layers, F.relu, args.dropout, args.agg_type, norm)
+        model = SAGE(in_feats, args.n_hidden, n_classes, args.n_layers, F.relu, args.dropout, args.agg_type)
     else:
         model = GCN(in_feats, args.n_hidden, n_classes, args.n_layers, F.relu, args.dropout, args.norm)
     model = model.to(device)
     model.load_state_dict(th.load(args.state_dict))
     model.eval()
     times = []
-    cpu = []
-    cuda = []
+    kernel_time = []
+        # prof = th.autograd.profiler.profile(use_cuda=True).__enter__()
+    with th.autograd.profiler.profile(args.perf, use_cuda=True) as prof:
+        for run in tqdm(range(1, args.n_runs + 1)):
+            tic = time.time()
+            with th.no_grad():
+                logits = model(graph, feat)
+            toc = time.time()
+            times.append(toc - tic)
     if args.perf:
-        prof = th.autograd.profiler.profile(use_cuda=True).__enter__()
-    for run in tqdm(range(1, args.n_runs + 1)):
-        tic = time.time()
-        with th.no_grad():
-            logits = model(graph, feat)
-        toc = time.time()
-        times.append(toc - tic)
-    if args.perf:
-        prof.__exit__(None, None, None)
-        key_avg = prof.total_average()
-        cpu.append(key_avg.self_cpu_time_total)
-        cuda.append(key_avg.cuda_time_total)
+        for evt in prof.key_averages():
+            if evt.key == "GSpMM":
+                kernel_time.append(evt.cuda_time*evt.count/args.n_runs)
     train_rocauc, valid_rocauc, test_rocauc = evaluate(model, graph, feat, labels, train_idx, val_idx, test_idx, evaluator)
-    return valid_rocauc, test_rocauc, times, {"cuda": cuda, "cpu": cpu} if prof else None
+    return valid_rocauc, test_rocauc, times, {"kernel": kernel_time} if prof else None
 
 def run(args, device, graph, in_feats, n_classes, labels, train_idx, val_idx, test_idx, feat, evaluator):
     # Define model and optimizer
     norm = args.norm
     if args.sage:
-        # model = SAGE(in_feats, args.n_hidden, n_classes, args.n_layers, F.relu, args.dropout, args.agg_type, norm)
+        model = SAGE(in_feats, args.n_hidden, n_classes, args.n_layers, F.relu, args.dropout, args.agg_type)
         pass
     else:
         model = GCN(in_feats, args.n_hidden, n_classes, args.n_layers, F.relu, args.dropout, norm)
     model = model.to(device)
     model.reset_parameters()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wd)
-    # lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=100, verbose=args.verbose)
+    lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=100, verbose=args.verbose)
+    train_rocauc, valid_rocauc, test_rocauc = 0, 0, 0
 
-    for epoch in tqdm(range(1, args.n_epochs + 1)):
-        # warmup_learning_rate(optimizer, args.lr, epoch)
+    with trange(1, args.n_epochs + 1) as t:
+        for epoch in t:
+            warmup_learning_rate(optimizer, args.lr, epoch)
 
-        loss, pred = train(model, graph, feat, labels, train_idx, optimizer)
+            loss, pred = train(model, graph, feat, labels, train_idx, optimizer)
 
-        # with th.no_grad():
-            # val_loss = th.nn.BCEWithLogitsLoss()(pred[val_idx], labels[val_idx].to(th.float))
+            with th.no_grad():
+                val_loss = th.nn.BCEWithLogitsLoss()(pred[val_idx], labels[val_idx].to(th.float))
 
-        # lr_scheduler.step(val_loss)
+            lr_scheduler.step(val_loss)
+            t.set_postfix(train=train_rocauc, val=valid_rocauc, test=test_rocauc)
 
-        if epoch % args.log_every == 0:
-            train_rocauc, valid_rocauc, test_rocauc = evaluate(model, graph, feat, labels, train_idx, val_idx, test_idx, evaluator)
-            print(f"Train:{train_rocauc:.4f}, Val:{valid_rocauc:.4f}, Test:{test_rocauc:.4f}")
+            if epoch % args.log_every == 0:
+                train_rocauc, valid_rocauc, test_rocauc = evaluate(model, graph, feat, labels, train_idx, val_idx, test_idx, evaluator)
+                print(f"Train:{train_rocauc:.4f}, Val:{valid_rocauc:.4f}, Test:{test_rocauc:.4f}")
         
     return model
 
@@ -170,7 +200,7 @@ def main():
     argparser.add_argument("--lr", type=float, default=0.01)
     argparser.add_argument("--dropout", type=float, default=0.5)
     argparser.add_argument("--wd", type=float, default=0)
-    argparser.add_argument("--log-every", type=int, default=1000)
+    argparser.add_argument("--log-every", type=int, default=50)
     argparser.add_argument("--agg-type", type=str, default="mean", help="Aggregator type: mean/gcn/pool/lstm")
     argparser.add_argument("--log-file", type=str, default="", help="Log file name")
     argparser.add_argument("--verbose", action="store_true")
@@ -192,9 +222,8 @@ def main():
     train_idx, val_idx, test_idx = splitted_idx["train"], splitted_idx["valid"], splitted_idx["test"]
     graph, labels = data[0]
     i1, i2, v = graph.edges('all')
-    feat = th.sparse.FloatTensor(th.stack([i2,i1]), graph.edata['feat'][v])
+    feat = SparseTensor.from_edge_index(th.stack([i2,i1]), graph.edata['feat'][v])
     graph = dgl.graph((i1, i2), idtype=th.int32)
-    feat = SparseTensor.from_torch_sparse_coo_tensor(feat)
     feat = feat.mean(dim=1)
 
     # data = NodePropPredDataset(name="ogbn-proteins")
@@ -248,25 +277,19 @@ def main():
         val_accs = []
         test_accs = []
         total_time = []
-        cuda_time = []
-        cpu_time = []
         stats = {
             "args": vars(args)
         }
         val_acc, test_acc, times, prof = inference(args, device, graph, in_feats, n_classes, labels, train_idx, val_idx, test_idx, feat, evaluator)
-        if prof:
-            cuda_time.extend(prof["cuda"])
-            cpu_time.extend(prof["cpu"])
         val_accs.append(val_acc)
         test_accs.append(test_acc)
         total_time.extend(times)
-        
+        print(f"Inference Finished. Best val/test rocauc:{val_acc:.4f}/{test_acc:.4f}")
         stats[f"gnn"] = {
             "time": total_time,
             "val_accs": val_accs,
             "test_accs": test_accs,
-            "cuda_time": cuda_time,
-            "cpu_time": cpu_time
+            "kernel_time": prof["kernel"]
         }
         with open(f"{args.log_file}.json", "w") as file:
             file.write(json.dumps(stats, sort_keys=True, indent=4))

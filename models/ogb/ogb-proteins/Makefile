@@ -15,7 +15,7 @@ train-gcn : FORCE
 	python main.py \
 		--n-epochs=$(N_EPOCH) \
 		--n-runs=$(N_RUNS) \
-		--log-every=500 \
+		--log-every=50 \
 		--train \
 		--norm=$(NORM_BASE) \
 		--state-dict=$(STATE_DICT_NAME)_gcn.pt \
@@ -53,7 +53,7 @@ train-sage : FORCE
 		--sage \
 		--n-epochs=$(N_EPOCH) \
 		--n-runs=$(N_RUNS) \
-		--log-every=500 \
+		--log-every=50 \
 		--train \
 		--norm=$(NORM_BASE) \
 		--state-dict=$(STATE_DICT_NAME)_sage.pt \
