@@ -9,7 +9,9 @@
 #include "../../runtime/cuda/cuda_common.h"
 
 // Uncomment this line to use cache_sample kernel
-// #define CACHE_SAMPLE
+// #define USE_CACHE_SAMPLE
+// Uncomment this line to choose SIMRAND as sampling 
+// #define USE_BUCKET
 
 namespace dgl {
 
@@ -114,6 +116,10 @@ void CusparseCsrmm2(
   const int n = x_length;
   const int k = csr.num_cols;
   const int nnz = csr.indices->shape[0];
+#ifdef KERNEL_TIME
+  std::cout << __LINE__ << ": m, n, k, nnz = " << m << ", " << n << ", " << k << ", " << nnz
+            << std::endl;
+#endif
   const DType alpha = 1.0;
   const DType beta = 0.0;
   // device
@@ -254,13 +260,6 @@ __global__ void CacheSampleSPMMKernel_bucket(
     int hb = A_indptr[(rid+1)];
     int offset;
     float acc1 = sum_init();
-    int nnz = hb - lb;
-    float norm = 0.0;
-
-    if (nnz < s)
-      norm = 1/float(nnz);
-    else
-      norm = 1/float(s);
 
     for (int ss = threadIdx.x; ss < s && (lb+ss) < hb; ss+=blockDim.x) {
       sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
@@ -273,7 +272,7 @@ __global__ void CacheSampleSPMMKernel_bucket(
         acc1 = sum_reduce(acc1, B[offset]);
       }
       offset = rid*k + cid;
-      C[offset] = acc1*norm;
+      C[offset] = acc1;
     }
   }
 }
@@ -295,13 +294,6 @@ __global__ void CacheSampleSPMMKernel_bucket(
     int hb = A_indptr[(rid+1)];
     int offset;
     float acc1 = sum_init();
-    int nnz = hb - lb;
-    float norm = 0.0;
-
-    if (nnz < s)
-      norm = 1/float(nnz);
-    else
-      norm = 1/float(s);
 
     for (int ss = threadIdx.x; ss < s && (lb+ss) < hb; ss+=blockDim.x) {
       sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
@@ -314,7 +306,7 @@ __global__ void CacheSampleSPMMKernel_bucket(
         acc1 = sum_reduce(acc1, B[offset]);
       }
       offset = rid*k + cid;
-      C[offset] = acc1*norm;
+      C[offset] = acc1;
     }
   }
 }
@@ -423,18 +415,19 @@ int XCacheSampleCsrmm<int32_t, float>(
   const float* B_data, float* C_data,
   dim3 grid, dim3 block,
   int shmem) {
-  /*
-  CacheSampleSPMMKernel_bucket<<<grid, block, shmem>>>(
-          m, n, s,
-          A_indptr,
-          A_indices,
-          B_data, C_data);
-  */
+#ifndef USE_BUCKET
   CacheSampleSPMMKernel_simrand<<<grid, block, shmem>>>(
           m, n, s,
           A_indptr,
           A_indices,
           B_data, C_data);
+#else
+  CacheSampleSPMMKernel_bucket<<<grid, block, shmem>>>(
+          m, n, s,
+          A_indptr,
+          A_indices,
+          B_data, C_data);
+#endif
   return 0;
 }
 
@@ -446,18 +439,19 @@ int XCacheSampleCsrmm<int64_t, float>(
   const float* B_data, float* C_data,
   dim3 grid, dim3 block,
   int shmem) {
-  /*
-  CacheSampleSPMMKernel_bucket<<<grid, block, shmem>>>(
-          m, n, s,
-          A_indptr,
-          A_indices,
-          B_data, C_data);
-  */
+#ifndef USE_BUCKET
   CacheSampleSPMMKernel_simrand<<<grid, block, shmem>>>(
           m, n, s,
           A_indptr,
           A_indices,
           B_data, C_data);
+#else
+  CacheSampleSPMMKernel_bucket<<<grid, block, shmem>>>(
+          m, n, s,
+          A_indptr,
+          A_indices,
+          B_data, C_data);
+#endif
   return 0;
 }
 
@@ -479,25 +473,20 @@ void CacheSampleCsrmm(
     int x_length, 
     const int S) {
   const int M = csr.num_rows;
-  const int K = x_length;
-
-  /* Open the commented blocks for kernel info and cuda time
-  cudaEvent_t cuda_start, cuda_stop;
-  cudaEventCreate(&cuda_start);
-  cudaEventCreate(&cuda_stop);
-  */
+  const int N = x_length;
+  // const int K = csr.num_cols;
 
   int DIM_X;
   int DIM_Y;
-  if (K <= 128) {
-    DIM_X = K;
+  if (N <= 128) {
+    DIM_X = N;
     DIM_Y = 512/DIM_X;
   }
   else {
     DIM_X = 128;
     DIM_Y = 4;
   }
-  int tile_k = (K+DIM_X-1)/DIM_X;
+  int tile_k = (N+DIM_X-1)/DIM_X;
   int n_block = (M+DIM_Y-1)/DIM_Y;
 
   dim3 grid  = dim3(n_block, tile_k, 1);
@@ -505,26 +494,15 @@ void CacheSampleCsrmm(
   int shmem = (S*DIM_Y*sizeof(int));
 
   /*
-  cudaEventRecord(cuda_start);
   char kernel_name[] = "CacheSampleSPMMKernel_simrand";
   printKernelInfo(kernel_name, grid, block, shmem, m, n, s);
   */
   XCacheSampleCsrmm<IdType, DType>(
-    M, K, S,
+    M, N, S,
     static_cast<IdType*>(csr.indptr->data),
     static_cast<IdType*>(csr.indices->data),
     B_data, C_data,
     grid, block, shmem);
-
-  /*
-  cudaEventRecord(cuda_stop);
-  cudaEventSynchronize(cuda_stop);
-
-  float cuda_kernel_time = 0;
-  cudaEventElapsedTime(&cuda_kernel_time, cuda_start, cuda_stop);
-  std::cout << kernel_name << " cudaEventElapsed time (ms): " 
-            << cuda_kernel_time << std::endl;
-  */
 }
 }  // namespace cusparse
 
@@ -577,19 +555,19 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
       for (int i = 1; i < ufeat->ndim; ++i)
         x_length *= ufeat->shape[i];
       // SWITCH between cusparse and cache_sample kernel
-#ifndef CACHE_SAMPLE
+#ifdef USE_CACHE_SAMPLE
+      cusparse::CacheSampleCsrmm<IdType, DType>(
+          ufeat->ctx, csr,
+          static_cast<DType*>(ufeat->data),
+          static_cast<DType*>(out->data),
+          x_length, S);
+#else
       cusparse::CusparseCsrmm2<IdType, DType>(
           ufeat->ctx, csr,
           static_cast<DType*>(ufeat->data),
           nullptr,
           static_cast<DType*>(out->data),
           x_length);
-#else
-      cusparse::CacheSampleCsrmm<IdType, DType>(
-          ufeat->ctx, csr,
-          static_cast<DType*>(ufeat->data),
-          static_cast<DType*>(out->data),
-          x_length, S);
 #endif
     } else if (sizeof(IdType) == 4 && op == "mul" && efeat.NumElements() == csr.indices->shape[0]) {
       int64_t x_length = 1;

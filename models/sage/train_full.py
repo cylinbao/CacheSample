@@ -153,38 +153,38 @@ def main(args):
                 # print(evt.self_cuda_time_total_str)
                 avg_spmm_t = evt.cuda_time*evt.count/num_run/1000
         print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
-        return 
 
-    # use optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    if args.train:
+        # use optimizer
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
-    # initialize graph
-    dur = []
-    for epoch in range(args.n_epochs):
-        model.train()
-        if epoch >= 3:
-            t0 = time.time()
-        # forward
-        logits = model(g, features)
-        loss = F.cross_entropy(logits[train_nid], labels[train_nid])
+        # initialize graph
+        dur = []
+        for epoch in range(args.n_epochs):
+            model.train()
+            if epoch >= 3:
+                t0 = time.time()
+            # forward
+            logits = model(g, features)
+            loss = F.cross_entropy(logits[train_nid], labels[train_nid])
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-        if epoch >= 3:
-            dur.append(time.time() - t0)
+            if epoch >= 3:
+                dur.append(time.time() - t0)
 
-        acc = evaluate(model, g, features, labels, val_nid)
-        print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
-              "ETputs(KTEPS) {:.2f}".format(epoch, np.mean(dur), loss.item(),
-                                            acc, n_edges / np.mean(dur) / 1000))
+            acc = evaluate(model, g, features, labels, val_nid)
+            print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
+                  "ETputs(KTEPS) {:.2f}".format(epoch, np.mean(dur), loss.item(),
+                                                acc, n_edges / np.mean(dur) / 1000))
 
-    print()
-    acc = evaluate(model, g, features, labels, test_nid)
-    print("Test Accuracy {:.4f}".format(acc))
+        print()
+        acc = evaluate(model, g, features, labels, test_nid)
+        print("Test Accuracy {:.4f}".format(acc))
 
-    save_model(args, model, model_name)
+        save_model(args, model, model_name)
 
 
 if __name__ == '__main__':
@@ -208,9 +208,13 @@ if __name__ == '__main__':
                         help="Aggregator type: mean/gcn/pool/lstm")
     parser.add_argument("--dir", type=str, default="state_dicts",
             help="directory to store model's state dict")
+    parser.add_argument("--train", action='store_true',
+            help="perform training")
     parser.add_argument("--inference", action='store_true',
-            help="whether to just perform inference (default=False)")
+            help="perform inference")
     args = parser.parse_args()
     print(args)
+
+    assert (args.train or args.inference) != False
 
     main(args)
