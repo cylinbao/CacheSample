@@ -8,6 +8,10 @@
 #include "./functor.cuh"
 #include "../../runtime/cuda/cuda_common.h"
 
+// #define KERNEL_TIME
+// #define KERNEL_INFO
+// #define CALL_FUNC
+
 // Uncomment this line to use cache_sample kernel
 // #define USE_CACHE_SAMPLE
 // Uncomment this line to choose SIMRAND as sampling 
@@ -116,9 +120,16 @@ void CusparseCsrmm2(
   const int n = x_length;
   const int k = csr.num_cols;
   const int nnz = csr.indices->shape[0];
-#ifdef KERNEL_TIME
+#ifdef KERNEL_INFO
+  static int m_acc = 0;
+  static int nnz_acc = 0;
+  m_acc += m;
+  nnz_acc += nnz;
+  float nnz_row = float(nnz)/float(m);
+  float avg_nnz_row = float(nnz_acc)/float(m_acc);
+
   std::cout << __LINE__ << ": m, n, k, nnz = " << m << ", " << n << ", " << k << ", " << nnz
-            << std::endl;
+            << "; nnz/row = " << nnz_row << ", avg nnz/row = " << avg_nnz_row << std::endl;
 #endif
   const DType alpha = 1.0;
   const DType beta = 0.0;
@@ -240,47 +251,14 @@ __device__ __forceinline__ float sum_reduce(float acc, float x) {
 }
 
 __device__ __forceinline__ float sum_init() {
-  return 0;
+  return 0.0;
 }
 
 // Idtype = int32_t
-__global__ void CacheSampleSPMMKernel_bucket(
+template<typename IdType>
+__global__ void CacheSampleSpMM_bucket(
   const int m, const int k, const int s,
-  const int32_t* A_indptr, const int32_t* A_indices,
-  const float* B, float* C)
-{
-  extern __shared__ int sh[];
-  int sm_offset = threadIdx.y*s;
-
-  int cid = blockIdx.y*blockDim.x + threadIdx.x;
-  int rid = blockIdx.x*blockDim.y + threadIdx.y;
-
-  if (rid < m) {
-    int lb = A_indptr[rid];
-    int hb = A_indptr[(rid+1)];
-    int offset;
-    float acc1 = sum_init();
-
-    for (int ss = threadIdx.x; ss < s && (lb+ss) < hb; ss+=blockDim.x) {
-      sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
-    }
-    __syncthreads();
-
-    if (cid < k) {
-      for (int kk = 0; kk < s && (lb+kk) < hb; kk++) {
-        offset = sh[(sm_offset+kk)] + cid;
-        acc1 = sum_reduce(acc1, B[offset]);
-      }
-      offset = rid*k + cid;
-      C[offset] = acc1;
-    }
-  }
-}
-
-// Idtype = int64_t
-__global__ void CacheSampleSPMMKernel_bucket(
-  const int m, const int k, const int s,
-  const int64_t* A_indptr, const int64_t* A_indices,
+  const IdType* A_indptr, const IdType* A_indices,
   const float* B, float* C)
 {
   extern __shared__ int sh[];
@@ -312,9 +290,10 @@ __global__ void CacheSampleSPMMKernel_bucket(
 }
 
 // IdType = int32_t
-__global__ void CacheSampleSPMMKernel_simrand(
+template<typename IdType>
+__global__ void CacheSampleSpMM_simrand(
   const int m, const int k, const int s,
-  const int32_t* A_indptr, const int32_t* A_indices,
+  const IdType* A_indptr, const IdType* A_indices,
   const float* B, float* C)
 {
   extern __shared__ int sh[];
@@ -353,13 +332,54 @@ __global__ void CacheSampleSPMMKernel_simrand(
   }
 }
 
-// IdType = int64_t
-__global__ void CacheSampleSPMMKernel_simrand(
+// IdType = int32_t
+__global__ void CacheSampleSpMM_Mul_bucket(
   const int m, const int k, const int s,
-  const int64_t* A_indptr, const int64_t* A_indices,
+  const int32_t* A_indptr, const int32_t* A_indices,
+  const float* A_data,
   const float* B, float* C)
 {
   extern __shared__ int sh[];
+  int *sh_indices = sh;
+  float *sh_data = (float*)&sh_indices[(s*blockDim.y)];
+  int sm_offset = threadIdx.y*s;
+
+  int cid = blockIdx.y*blockDim.x + threadIdx.x;
+  int rid = blockIdx.x*blockDim.y + threadIdx.y;
+
+  if (rid < m) {
+    int lb = A_indptr[rid];
+    int hb = A_indptr[(rid+1)];
+    int offset;
+    float acc1 = sum_init();
+
+    for (int ss = threadIdx.x; ss < s && (lb+ss) < hb; ss+=blockDim.x) {
+      sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
+      sh_data[(sm_offset + ss)] = A_data[(lb + ss)];
+    }
+    __syncthreads();
+
+    if (cid < k) {
+      for (int kk = 0; kk < s && (lb+kk) < hb; kk++) {
+        offset = sh_indices[(sm_offset+kk)] + cid;
+        acc1 = sum_reduce(acc1, sh_data[sm_offset+kk]*B[offset]);
+      }
+      offset = rid*k + cid;
+      C[offset] = acc1;
+    }
+  }
+}
+
+// IdType = int32_t
+__global__ void CacheSampleSpMM_Mul_simrand(
+  const int m, const int k, const int s,
+  const int32_t* A_indptr, const int32_t* A_indices,
+  const float* A_data,
+  const float* B, float* C)
+{
+  extern __shared__ int sh[];
+  int *sh_indices = sh;
+  float *sh_data = (float*)&sh_indices[(s*blockDim.y)];
   int sm_offset = threadIdx.y*s;
 
   int cid = blockIdx.y*blockDim.x + threadIdx.x;
@@ -373,21 +393,24 @@ __global__ void CacheSampleSPMMKernel_simrand(
     float acc1 = sum_init();
 
     if (nnz < s) {
-      for (int ss = threadIdx.x; (lb+ss) < hb; ss+=blockDim.x)
-        sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
+      for (int ss = threadIdx.x; (lb+ss) < hb; ss+=blockDim.x) {
+        sh_indices[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
+        sh_data[(sm_offset + ss)] = A_data[(lb + ss)];
+      }
     }
     else {
       for (int ss = threadIdx.x; ss < s; ss+=blockDim.x) {
         offset = lb + ((ss*577) % nnz);
-        sh[(sm_offset + ss)] = A_indices[offset]*k;
+        sh_indices[(sm_offset + ss)] = A_indices[offset]*k;
+        sh_data[(sm_offset + ss)] = A_data[offset];
       }
     }
     __syncthreads();
 
     if (cid < k) {
       for (int kk = 0; kk < s && (lb+kk) < hb; kk++) {
-        offset = sh[(sm_offset+kk)] + cid;
-        acc1 = sum_reduce(acc1, B[offset]);
+        offset = sh_indices[(sm_offset+kk)] + cid;
+        acc1 = sum_reduce(acc1, sh_data[sm_offset+kk]*B[offset]);
       }
       offset = rid*k + cid;
       C[offset] = acc1;
@@ -416,13 +439,13 @@ int XCacheSampleCsrmm<int32_t, float>(
   dim3 grid, dim3 block,
   int shmem) {
 #ifndef USE_BUCKET
-  CacheSampleSPMMKernel_simrand<<<grid, block, shmem>>>(
+  CacheSampleSpMM_simrand<int32_t><<<grid, block, shmem>>>(
           m, n, s,
           A_indptr,
           A_indices,
           B_data, C_data);
 #else
-  CacheSampleSPMMKernel_bucket<<<grid, block, shmem>>>(
+  CacheSampleSpMM_bucket<int32_t><<<grid, block, shmem>>>(
           m, n, s,
           A_indptr,
           A_indices,
@@ -440,16 +463,54 @@ int XCacheSampleCsrmm<int64_t, float>(
   dim3 grid, dim3 block,
   int shmem) {
 #ifndef USE_BUCKET
-  CacheSampleSPMMKernel_simrand<<<grid, block, shmem>>>(
+  CacheSampleSpMM_simrand<int64_t><<<grid, block, shmem>>>(
           m, n, s,
           A_indptr,
           A_indices,
           B_data, C_data);
 #else
-  CacheSampleSPMMKernel_bucket<<<grid, block, shmem>>>(
+  CacheSampleSpMM_bucket<int64_t><<<grid, block, shmem>>>(
           m, n, s,
           A_indptr,
           A_indices,
+          B_data, C_data);
+#endif
+  return 0;
+}
+
+template <typename DType>
+int XCacheSampleCsrmmMul(
+  int m, int n, int s,
+  const int32_t* A_indptr,
+  const int32_t* A_indices,
+  const DType* A_data,
+  const DType* B_data, DType* C_data,
+  dim3 grid, dim3 block,
+  int shmem) {
+  LOG(FATAL) << "Not supported yet";
+  return -1;
+}
+
+template <>
+int XCacheSampleCsrmmMul<float>(
+  int m, int n, int s,
+  const int32_t* A_indptr,
+  const int32_t* A_indices,
+  const float* A_data,
+  const float* B_data, float* C_data,
+  dim3 grid, dim3 block,
+  int shmem) {
+#ifndef USE_BUCKET
+  CacheSampleSpMM_Mul_simrand<<<grid, block, shmem*2>>>(
+          m, n, s,
+          A_indptr, A_indices,
+          A_data,
+          B_data, C_data);
+#else
+  CacheSampleSpMM_Mul_bucket<<<grid, block, shmem*2>>>(
+          m, n, s,
+          A_indptr, A_indices,
+          A_data,
           B_data, C_data);
 #endif
   return 0;
@@ -474,11 +535,14 @@ void CacheSampleCsrmm(
     const int S) {
   const int M = csr.num_rows;
   const int N = x_length;
-  // const int K = csr.num_cols;
 
   int DIM_X;
   int DIM_Y;
-  if (N <= 128) {
+  if (N <= 32) {
+    DIM_X = 32;
+    DIM_Y = 4;
+  }
+  else if (N <= 128) {
     DIM_X = N;
     DIM_Y = 512/DIM_X;
   }
@@ -486,6 +550,7 @@ void CacheSampleCsrmm(
     DIM_X = 128;
     DIM_Y = 4;
   }
+
   int tile_k = (N+DIM_X-1)/DIM_X;
   int n_block = (M+DIM_Y-1)/DIM_Y;
 
@@ -493,15 +558,62 @@ void CacheSampleCsrmm(
   dim3 block = dim3(DIM_X, DIM_Y, 1);
   int shmem = (S*DIM_Y*sizeof(int));
 
-  /*
-  char kernel_name[] = "CacheSampleSPMMKernel_simrand";
-  printKernelInfo(kernel_name, grid, block, shmem, m, n, s);
-  */
+#ifdef KERNEL_INFO
+  char kernel_name[] = "CacheSampleCsrmm()";
+  printKernelInfo(kernel_name, grid, block, shmem, M, N, S);
+#endif
+
   XCacheSampleCsrmm<IdType, DType>(
     M, N, S,
     static_cast<IdType*>(csr.indptr->data),
     static_cast<IdType*>(csr.indices->data),
     B_data, C_data,
+    grid, block, shmem);
+}
+
+template <typename DType>
+void CacheSampleCsrmmMul(
+    const DLContext& ctx,
+    const aten::CSRMatrix& csr,
+    const DType* B_data, const DType* A_data,
+    DType* C_data,
+    int x_length, 
+    const int S) {
+  const int M = csr.num_rows;
+  const int N = x_length;
+
+  int DIM_X;
+  int DIM_Y;
+  if (N <= 32) {
+    DIM_X = 32;
+    DIM_Y = 4;
+  }
+  else if (N <= 128) {
+    DIM_X = N;
+    DIM_Y = 512/DIM_X;
+  }
+  else {
+    DIM_X = 128;
+    DIM_Y = 4;
+  }
+
+  int tile_k = (N+DIM_X-1)/DIM_X;
+  int n_block = (M+DIM_Y-1)/DIM_Y;
+
+  dim3 grid  = dim3(n_block, tile_k, 1);
+  dim3 block = dim3(DIM_X, DIM_Y, 1);
+  int shmem = (S*DIM_Y*sizeof(int));
+
+#ifdef KERNEL_INFO
+  char kernel_name[] = "CacheSampleCsrmmMul()";
+  printKernelInfo(kernel_name, grid, block, shmem, M, N, S);
+#endif
+
+  XCacheSampleCsrmmMul<DType>(
+    M, N, S,
+    static_cast<int32_t*>(csr.indptr->data),
+    static_cast<int32_t*>(csr.indices->data),
+    A_data, B_data, C_data,
     grid, block, shmem);
 }
 }  // namespace cusparse
@@ -545,11 +657,26 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
              NDArray out,
              std::vector<NDArray> out_aux,
              const int S) {
+#ifdef CALL_FUNC
+  LOG(INFO) << "calling SpMMCsr()";
+#endif
+#ifdef KERNEL_TIME
+  cudaEvent_t cuda_start, cuda_stop;
+  cudaEventCreate(&cuda_start);
+  cudaEventCreate(&cuda_stop);
+  cudaEventRecord(cuda_start);
+#endif
   if (reduce == "sum") {
+#ifdef CALL_FUNC
+    LOG(INFO) << "reduce == sum";
+#endif
 #if CUDART_VERSION < 11000
     if (sizeof(IdType) == 4 && op == "copy_lhs") {
 #else
     if (op == "copy_lhs") {
+#endif
+#ifdef CALL_FUNC
+      LOG(INFO) << "op == copy_lhs";
 #endif
       int64_t x_length = 1;
       for (int i = 1; i < ufeat->ndim; ++i)
@@ -570,29 +697,50 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
           x_length);
 #endif
     } else if (sizeof(IdType) == 4 && op == "mul" && efeat.NumElements() == csr.indices->shape[0]) {
+#ifdef CALL_FUNC
+      LOG(INFO) << "op == mul";
+#endif
       int64_t x_length = 1;
       for (int i = 1; i < ufeat->ndim; ++i)
         x_length *= ufeat->shape[i];
       if (!IsNullArray(csr.data))
         efeat = IndexSelect(efeat, csr.data);
+#ifdef USE_CACHE_SAMPLE
+      cusparse::CacheSampleCsrmmMul(
+          ufeat->ctx, csr,
+          static_cast<DType*>(ufeat->data),
+          static_cast<DType*>(efeat->data),
+          static_cast<DType*>(out->data),
+          x_length, S);
+#else
       cusparse::CusparseCsrmm2<DType>(
           ufeat->ctx, csr,
           static_cast<DType*>(ufeat->data),
           static_cast<DType*>(efeat->data),
           static_cast<DType*>(out->data),
           x_length);
+#endif
     } else {
+#ifdef CALL_FUNC
+      LOG(INFO) << "op == " << op;
+#endif
       SWITCH_OP(op, Op, {
         cuda::SpMMCsr<IdType, DType, Op, cuda::reduce::Sum<IdType, DType> >(
             bcast, csr, ufeat, efeat, out, NullArray(), NullArray());
       });
     }
   } else if (reduce == "max") {
+#ifdef CALL_FUNC
+    LOG(INFO) << "reduce == max";
+#endif
     SWITCH_OP(op, Op, {
       cuda::SpMMCsr<IdType, DType, Op, cuda::reduce::Max<IdType, DType> >(
           bcast, csr, ufeat, efeat, out, out_aux[0], out_aux[1]);
     });
   } else if (reduce == "min") {
+#ifdef CALL_FUNC
+    LOG(INFO) << "reduce == min";
+#endif
     SWITCH_OP(op, Op, {
       cuda::SpMMCsr<IdType, DType, Op, cuda::reduce::Min<IdType, DType> >(
           bcast, csr, ufeat, efeat, out, out_aux[0], out_aux[1]);
@@ -600,6 +748,18 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
   } else {
     LOG(FATAL) << "Not implemented";
   }
+#ifdef KERNEL_TIME
+  cudaEventRecord(cuda_stop);
+  cudaEventSynchronize(cuda_stop);
+
+  static float kernel_time_acc = 0;
+  float cuda_kernel_time = 0;
+  cudaEventElapsedTime(&cuda_kernel_time, cuda_start, cuda_stop);
+  kernel_time_acc += cuda_kernel_time;
+  std::cout << __LINE__ << ": SpMMCsr() cudaEventElapsed time (ms): " 
+            << cuda_kernel_time << ", accumulated time (ms): "
+            << kernel_time_acc << std::endl;
+#endif
 }
 
 /*!
