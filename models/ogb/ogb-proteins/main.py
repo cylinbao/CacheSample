@@ -64,7 +64,7 @@ class SAGE(nn.Module):
 
         self.convs = nn.ModuleList()
         self.convs.append(dglnn.SAGEConv(in_feats, n_hidden, agg_type))
-        for _ in range(n_layers):
+        for _ in range(n_layers-2):
             self.convs.append(dglnn.SAGEConv(n_hidden, n_hidden, agg_type))
         self.convs.append(dglnn.SAGEConv(n_hidden, n_classes, agg_type))
 
