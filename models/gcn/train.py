@@ -106,7 +106,7 @@ def main(args):
         args.dataset, norm, args.n_layers, args.n_hidden)
 
     if args.inference:
-        model = load_model(args, model, model_name)
+        model = load_model(args.dir, model, model_name)
         acc = evaluate(model, features, labels, test_mask)
         print("Test accuracy {:.3%}".format(acc))
 
@@ -163,7 +163,7 @@ def main(args):
     acc = evaluate(model, features, labels, test_mask)
     print("Test accuracy {:.2%}".format(acc))
 
-    save_model(args, model, model_name)
+    save_model(args.dir, model, model_name)
 
 
 if __name__ == '__main__':

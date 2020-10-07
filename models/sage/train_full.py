@@ -131,7 +131,7 @@ def main(args):
         args.dataset, args.aggregator_type, args.n_layers, args.n_hidden)
 
     if args.inference:
-        model = load_model(args, model, model_name)
+        model = load_model(args.dir, model, model_name)
         acc = evaluate(model, g, features, labels, test_nid)
         print("Test accuracy {:.3%}".format(acc))
 
@@ -184,7 +184,7 @@ def main(args):
         acc = evaluate(model, g, features, labels, test_nid)
         print("Test Accuracy {:.4f}".format(acc))
 
-        save_model(args, model, model_name)
+        save_model(args.dir, model, model_name)
 
 
 if __name__ == '__main__':

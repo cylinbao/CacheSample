@@ -154,11 +154,11 @@ def run(args, device, data):
     model = SAGE(in_feats, args.num_hidden, n_classes, args.num_layers, F.relu, args.dropout)
     model = model.to(device)
 
-    model_name = "sage_sampl_{}_agg_mean_n_layer_{}_n_hidden_{}.sd".format(
-        args.dataset, args.num_layers, args.num_hidden)
+    model_name = "sage_sampl_{}_agg_mean_n_layer_{}_n_hidden_{}_batch_{}.sd"\
+        .format(args.dataset, args.num_layers, args.num_hidden, args.batch_size)
 
     if args.inference:
-        model = load_model(args, model, model_name)
+        model = load_model(args.dir, model, model_name)
         test_acc = evaluate(model, test_g, test_g.ndata['features'], test_g.ndata['labels'], 
                 test_nid, args.batch_size, device)
         print('Test Accuracy: {:.4f}'.format(test_acc))
@@ -171,9 +171,9 @@ def run(args, device, data):
                 t = inference(model, test_g, test_g.ndata['features'], 
                         args.batch_size, device)
                 times.append(t)
-                print("Inference time: {:.3f}".format(t))
-        print("Average inference time: {:.3f}".format(
-            np.mean(times)*1000))
+                print("Inference time: {:.4f} (s)".format(t))
+        print("Average inference time: {:.4f} (s)".format(
+            np.mean(times)))
 
         # print(prof.key_averages().table(sort_by="cuda_time_total"))
         events = prof.key_averages()
@@ -230,7 +230,7 @@ def run(args, device, data):
 
         print('Avg epoch time: {}'.format(avg / (epoch - 4)))
 
-        save_model(args, model, model_name)
+        save_model(args.dir, model, model_name)
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser("multi-gpu training")
