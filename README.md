@@ -9,6 +9,11 @@ If you already clone the project, update the submodules with
 ```
 git submodule update --init --recursive
 ```
+To get new commits in the master.
+```
+git pull origin master
+git submodule update --remote
+```
 Build DGL
 ```
 mkdir dgl/build
