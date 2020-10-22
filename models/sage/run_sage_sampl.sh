@@ -1,13 +1,7 @@
-# able to achieve ??% accuracy on ogb-product dataset
+# able to achieve 69.96% test accuracy on ogb-product dataset
 
 # training command
-python train_sampling.py --gpu=0 --dataset=ogb-product --num-hidden=256 --batch-size=16384 --inductive --train --num-epoch=1 > train_sampl.log
-
-if [ $? -eq 1 ]; then
-    exit
-fi
+python train_sampling.py --gpu=0 --dataset=ogb-product --num-hidden=256 --batch-size=64 --inductive --train
 
 # inference command
-python train_sampling.py --gpu=0 --dataset=ogb-product --num-hidden=256 --batch-size=32768 --inductive --inference > infer_sampl.log
-
-sudo poweroff
+python train_sampling.py --gpu=0 --dataset=ogb-product --num-hidden=256 --batch-size=32768 --inductive --inference

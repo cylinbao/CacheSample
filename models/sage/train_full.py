@@ -28,19 +28,20 @@ class GraphSAGE(nn.Module):
                  n_layers,
                  activation,
                  dropout,
-                 aggregator_type):
+                 aggregator_type,
+                 use_cache_sample):
         super(GraphSAGE, self).__init__()
         self.layers = nn.ModuleList()
         self.dropout = nn.Dropout(dropout)
         self.activation = activation
 
         # input layer
-        self.layers.append(SAGEConv(in_feats, n_hidden, aggregator_type))
+        self.layers.append(SAGEConv(in_feats, n_hidden, aggregator_type, use_cache_sample=use_cache_sample))
         # hidden layers
         for i in range(n_layers - 1):
-            self.layers.append(SAGEConv(n_hidden, n_hidden, aggregator_type))
+            self.layers.append(SAGEConv(n_hidden, n_hidden, aggregator_type, use_cache_sample=use_cache_sample))
         # output layer
-        self.layers.append(SAGEConv(n_hidden, n_classes, aggregator_type)) # activation None
+        self.layers.append(SAGEConv(n_hidden, n_classes, aggregator_type, use_cache_sample=use_cache_sample)) # activation None
 
     def forward(self, graph, inputs):
         h = self.dropout(inputs)
@@ -122,7 +123,8 @@ def main(args):
                       args.n_layers,
                       F.relu,
                       args.dropout,
-                      args.aggregator_type)
+                      args.aggregator_type,
+                      args.cache_sample)
 
     if cuda:
         model.cuda()
@@ -212,6 +214,8 @@ if __name__ == '__main__':
             help="perform training")
     parser.add_argument("--inference", action='store_true',
             help="perform inference")
+    parser.add_argument("--cache-sample", action='store_true',
+            help="Use CacheSample kernel")
     args = parser.parse_args()
     print(args)
 
