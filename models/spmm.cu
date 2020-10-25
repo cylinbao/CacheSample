@@ -272,6 +272,13 @@ __global__ void CacheSampleSpMM_bucket(
     int hb = A_indptr[(rid+1)];
     int offset;
     float acc1 = sum_init();
+    int nnz = hb - lb;
+    float norm = 0.0;
+
+    if (nnz < s)
+      norm = 1/float(nnz);
+    else
+      norm = 1/float(s);
 
     for (int ss = threadIdx.x; ss < s && (lb+ss) < hb; ss+=blockDim.x) {
       sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
@@ -284,7 +291,7 @@ __global__ void CacheSampleSpMM_bucket(
         acc1 = sum_reduce(acc1, B[offset]);
       }
       offset = rid*k + cid;
-      C[offset] = acc1;
+      C[offset] = acc1*norm;
     }
   }
 }
@@ -305,9 +312,15 @@ __global__ void CacheSampleSpMM_simrand(
   if (rid < m) {
     int lb = A_indptr[rid];
     int hb = A_indptr[(rid+1)];
-    int nnz = hb - lb;
     int offset;
     float acc1 = sum_init();
+    int nnz = hb - lb;
+    float norm = 0.0;
+
+    if (nnz < s)
+      norm = 1/float(nnz);
+    else
+      norm = 1/float(s);
 
     if (nnz < s) {
       for (int ss = threadIdx.x; (lb+ss) < hb; ss+=blockDim.x)
@@ -327,7 +340,7 @@ __global__ void CacheSampleSpMM_simrand(
         acc1 = sum_reduce(acc1, B[offset]);
       }
       offset = rid*k + cid;
-      C[offset] = acc1;
+      C[offset] = acc1*norm;
     }
   }
 }
