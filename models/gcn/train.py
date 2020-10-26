@@ -11,13 +11,14 @@ from dgl.data import RedditDataset
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from model_utils import save_model, load_model
+# from cache_sample import cache_sample_rand_csr, cache_sample_simrand_csr
 
 from gcn import GCN
 
-def evaluate(model, features, labels, mask):
+def evaluate(model, g, features, labels, mask):
     model.eval()
     with torch.no_grad():
-        logits = model(features)
+        logits = model(g, features)
         logits = logits[mask]
         labels = labels[mask]
         _, indices = torch.max(logits, dim=1)
@@ -25,11 +26,11 @@ def evaluate(model, features, labels, mask):
         return correct.item() * 1.0 / len(labels)
 
 # Run forward and return runtime
-def inference(model, features):
+def inference(model, g, features):
     model.eval()
     t0 = time.time()
     with torch.no_grad():
-        logits = model(features)
+        logits = model(g, features)
         return time.time() - t0
 
 def main(args):
@@ -71,12 +72,6 @@ def main(args):
               val_mask.int().sum().item(),
               test_mask.int().sum().item()))
 
-    # add self loop
-    if args.self_loop:
-        g = dgl.remove_self_loop(g)
-        g = dgl.add_self_loop(g)
-    n_edges = g.number_of_edges()
-
     # normalization
     degs = g.in_degrees().float()
     norm = torch.pow(degs, -0.5)
@@ -86,8 +81,7 @@ def main(args):
     g.ndata['norm'] = norm.unsqueeze(1)
 
     # create GCN model
-    model = GCN(g,
-                in_feats,
+    model = GCN(in_feats,
                 args.n_hidden,
                 n_classes,
                 args.n_layers,
@@ -107,15 +101,15 @@ def main(args):
 
     if args.inference:
         model = load_model(args.dir, model, model_name)
-        acc = evaluate(model, features, labels, test_mask)
+        acc = evaluate(model, g, features, labels, test_mask)
         print("Test accuracy {:.3%}".format(acc))
 
-        num_run = 5
+        num_run = 10
         times = []
         import torch.autograd.profiler as profiler
         with profiler.profile(use_cuda=True) as prof:
             for i in range(num_run):
-                t = inference(model, features)
+                t = inference(model, g, features)
                 times.append(t)
                 print("Inference time: {:.3f}".format(t))
         print("Average inference time: {:.3f}".format(
@@ -144,7 +138,7 @@ def main(args):
         if epoch >= 3:
             t0 = time.time()
         # forward
-        logits = model(features)
+        logits = model(g, features)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
 
         optimizer.zero_grad()
@@ -154,13 +148,13 @@ def main(args):
         if epoch >= 3:
             dur.append(time.time() - t0)
 
-        acc = evaluate(model, features, labels, val_mask)
+        acc = evaluate(model, g, features, labels, val_mask)
         print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
               "ETputs(KTEPS) {:.2f}". format(epoch, np.mean(dur), loss.item(),
                                              acc, n_edges / np.mean(dur) / 1000))
 
     print()
-    acc = evaluate(model, features, labels, test_mask)
+    acc = evaluate(model, g, features, labels, test_mask)
     print("Test accuracy {:.2%}".format(acc))
 
     save_model(args.dir, model, model_name)
