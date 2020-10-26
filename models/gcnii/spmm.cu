@@ -13,7 +13,7 @@
 // #define CALL_FUNC
 
 // Uncomment this line to use cache_sample kernel
-#define USE_CACHE_SAMPLE
+// #define USE_CACHE_SAMPLE
 // Uncomment this line to choose SIMRAND as sampling 
 // #define USE_BUCKET
 

@@ -116,7 +116,7 @@ def main(args):
         test_loss, test_acc = evaluate(model, g, features, labels, test_mask)
         print("Test loss {:.4f} | Test accuracy {:.2%}".format(test_loss, test_acc))
 
-        num_run = 5
+        num_run = 10
         times = []
         import torch.autograd.profiler as profiler
         with profiler.profile(use_cuda=True) as prof:

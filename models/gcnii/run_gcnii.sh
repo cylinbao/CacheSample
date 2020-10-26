@@ -8,7 +8,7 @@ python train.py --dataset pubmed --gpu 0 --n-layers 16 --n-hidden 256 --lamda 0.
 python train.py --dataset pubmed --gpu 0 --n-layers 16 --n-hidden 256 --lamda 0.4 --dropout 0.5 --wd1 5e-4 --norm=both --inference
 
 # inference command, use --norm=none for cache_sample kernel
-python train.py --dataset pubmed --gpu 0 --n-layers 16 --n-hidden 256 --lamda 0.4 --dropout 0.5 --wd1 5e-4 --norm=none --inference
+# python train.py --dataset pubmed --gpu 0 --n-layers 16 --n-hidden 256 --lamda 0.4 --dropout 0.5 --wd1 5e-4 --norm=none --inference
 
 # command for cora, the default parameters are set for cora
 # python train.py --dataset cora --gpu 0 --norm=both --train
