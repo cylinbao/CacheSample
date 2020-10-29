@@ -4,7 +4,7 @@ from ...sparse import _gspmm, _gsddmm
 
 __all__ = ['gspmm', 'gsddmm', 'edge_softmax']
 # CONFIGURE S here, will be used in GSpMM in line 62
-S = 512
+S = 128
 
 def _reduce_grad(grad, shape):
     """Reduce gradient on the broadcast dimension

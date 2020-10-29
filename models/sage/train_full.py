@@ -18,6 +18,7 @@ from dgl.nn.pytorch.conv import SAGEConv
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from model_utils import save_model, load_model
+import dgl.backend.pytorch.sparse as dgl_pytorch_sp
 
 
 class GraphSAGE(nn.Module):
@@ -129,15 +130,14 @@ def main(args):
     if cuda:
         model.cuda()
 
-    model_name = "graphsage_{}_agg_{}_n_layer_{}_n_hidden_{}.sd".format(
-        args.dataset, args.aggregator_type, args.n_layers, args.n_hidden)
-
     if args.inference:
+        model_name = "graphsage_{}_agg_{}_n_layer_{}_n_hidden_{}_best.sd".format(
+            args.dataset, args.aggregator_type, args.n_layers, args.n_hidden)
         model = load_model(args.dir, model, model_name)
         acc = evaluate(model, g, features, labels, test_nid)
         print("Test accuracy {:.3%}".format(acc))
 
-        num_run = 5
+        num_run = 10
         times = []
         import torch.autograd.profiler as profiler
         with profiler.profile(use_cuda=True) as prof:
@@ -155,6 +155,17 @@ def main(args):
                 # print(evt.self_cuda_time_total_str)
                 avg_spmm_t = evt.cuda_time*evt.count/num_run/1000
         print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
+
+        if args.log:
+            with open(args.dataset + "_log.csv", 'a+') as f:
+                if args.cache_sample:
+                    S = dgl_pytorch_sp.S
+                else:
+                    S = 0
+                string = "S, {}, ".format(S)
+                string += "accuracy, {:.4f}, ".format(acc)
+                string += "cuda time, {:.3f}".format(avg_spmm_t)
+                f.write(string + "\n")
 
     if args.train:
         # use optimizer
@@ -186,7 +197,7 @@ def main(args):
         acc = evaluate(model, g, features, labels, test_nid)
         print("Test Accuracy {:.4f}".format(acc))
 
-        save_model(args.dir, model, model_name)
+        return acc, model
 
 
 if __name__ == '__main__':
@@ -216,9 +227,28 @@ if __name__ == '__main__':
             help="perform inference")
     parser.add_argument("--cache-sample", action='store_true',
             help="Use CacheSample kernel")
+    parser.add_argument("--save-model", action='store_true',
+            help="whether to save model")
+    parser.add_argument("--log", action='store_true',
+            help="whether to log performance for inference")
     args = parser.parse_args()
     print(args)
 
-    assert (args.train or args.inference) != False
+    assert (args.train or args.inference) == True
 
-    main(args)
+    if args.train:
+        run = 10
+        acc_arr = []
+        model_arr = []
+        for i in range(run):
+            acc, model = main(args)
+            acc_arr.append(acc)
+            model_arr.append(model)
+        if args.save_model:
+            best_model = model_arr[np.argmax(acc_arr)]
+            model_name = "graphsage_{}_agg_{}_n_layer_{}_n_hidden_{}_best.sd".format(
+                args.dataset, args.aggregator_type, args.n_layers, args.n_hidden)
+            save_model(args.dir, best_model, model_name)
+    else:
+        main(args)
+

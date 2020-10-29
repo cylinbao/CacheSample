@@ -432,7 +432,7 @@ __global__ void CacheSampleSpMM_Mul_simrand(
 }
 
 template <typename IdType, typename DType>
-int XCacheSampleCsrmm(
+void XCacheSampleCsrmm(
   int m, int n, int s,
   const IdType* A_indptr,
   const IdType* A_indices,
@@ -440,59 +440,62 @@ int XCacheSampleCsrmm(
   dim3 grid, dim3 block,
   int shmem) {
   LOG(FATAL) << "Not supported yet";
-  return -1;
 }
 
 template <>
-int XCacheSampleCsrmm<int32_t, float>(
+void XCacheSampleCsrmm<int32_t, float>(
   int m, int n, int s,
   const int32_t* A_indptr,
   const int32_t* A_indices,
   const float* B_data, float* C_data,
   dim3 grid, dim3 block,
   int shmem) {
+  auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
 #ifndef USE_BUCKET
-  CacheSampleSpMM_simrand<int32_t><<<grid, block, shmem>>>(
-          m, n, s,
-          A_indptr,
-          A_indices,
-          B_data, C_data);
+  CUDA_KERNEL_CALL(CacheSampleSpMM_simrand<int32_t>, 
+    grid, block, shmem, thr_entry->stream, 
+    m, n, s,
+    A_indptr,
+    A_indices,
+    B_data, C_data);
 #else
-  CacheSampleSpMM_bucket<int32_t><<<grid, block, shmem>>>(
-          m, n, s,
-          A_indptr,
-          A_indices,
-          B_data, C_data);
+  CUDA_KERNEL_CALL(CacheSampleSpMM_bucket<int32_t>, 
+    grid, block, shmem, thr_entry->stream, 
+    m, n, s,
+    A_indptr,
+    A_indices,
+    B_data, C_data);
 #endif
-  return 0;
 }
 
 template <>
-int XCacheSampleCsrmm<int64_t, float>(
+void XCacheSampleCsrmm<int64_t, float>(
   int m, int n, int s,
   const int64_t* A_indptr,
   const int64_t* A_indices,
   const float* B_data, float* C_data,
   dim3 grid, dim3 block,
   int shmem) {
+  auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
 #ifndef USE_BUCKET
-  CacheSampleSpMM_simrand<int64_t><<<grid, block, shmem>>>(
-          m, n, s,
-          A_indptr,
-          A_indices,
-          B_data, C_data);
+  CUDA_KERNEL_CALL(CacheSampleSpMM_simrand<int64_t>, 
+    grid, block, shmem, thr_entry->stream, 
+    m, n, s,
+    A_indptr,
+    A_indices,
+    B_data, C_data);
 #else
-  CacheSampleSpMM_bucket<int64_t><<<grid, block, shmem>>>(
-          m, n, s,
-          A_indptr,
-          A_indices,
-          B_data, C_data);
+  CUDA_KERNEL_CALL(CacheSampleSpMM_bucket<int64_t>, 
+    grid, block, shmem, thr_entry->stream, 
+    m, n, s,
+    A_indptr,
+    A_indices,
+    B_data, C_data);
 #endif
-  return 0;
 }
 
 template <typename DType>
-int XCacheSampleCsrmmMul(
+void XCacheSampleCsrmmMul(
   int m, int n, int s,
   const int32_t* A_indptr,
   const int32_t* A_indices,
@@ -501,11 +504,10 @@ int XCacheSampleCsrmmMul(
   dim3 grid, dim3 block,
   int shmem) {
   LOG(FATAL) << "Not supported yet";
-  return -1;
 }
 
 template <>
-int XCacheSampleCsrmmMul<float>(
+void XCacheSampleCsrmmMul<float>(
   int m, int n, int s,
   const int32_t* A_indptr,
   const int32_t* A_indices,
@@ -513,20 +515,20 @@ int XCacheSampleCsrmmMul<float>(
   const float* B_data, float* C_data,
   dim3 grid, dim3 block,
   int shmem) {
+  auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
 #ifndef USE_BUCKET
-  CacheSampleSpMM_Mul_simrand<<<grid, block, shmem*2>>>(
-          m, n, s,
-          A_indptr, A_indices,
-          A_data,
-          B_data, C_data);
+  CUDA_KERNEL_CALL(CacheSampleSpMM_Mul_simrand, 
+    grid, block, shmem*2, thr_entry->stream, 
+    m, n, s,
+    A_indptr, A_indices, A_data,
+    B_data, C_data);
 #else
-  CacheSampleSpMM_Mul_bucket<<<grid, block, shmem*2>>>(
-          m, n, s,
-          A_indptr, A_indices,
-          A_data,
-          B_data, C_data);
+  CUDA_KERNEL_CALL(CacheSampleSpMM_Mul_bucket, 
+    grid, block, shmem*2, thr_entry->stream, 
+    m, n, s,
+    A_indptr, A_indices, A_data,
+    B_data, C_data);
 #endif
-  return 0;
 }
 
 void printKernelInfo(char name[], dim3 grid, dim3 blk, int shmem, 
