@@ -156,8 +156,8 @@ def main(args):
                 avg_spmm_t = evt.cuda_time*evt.count/num_run/1000
         print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
 
-        if args.log:
-            with open(args.dataset + "_log.csv", 'a+') as f:
+        if args.log != "none":
+            with open(args.dataset + "_" + args.log + "_log.csv", 'a+') as f:
                 if args.cache_sample:
                     S = dgl_pytorch_sp.S
                 else:
@@ -229,8 +229,8 @@ if __name__ == '__main__':
             help="Use CacheSample kernel")
     parser.add_argument("--save-model", action='store_true',
             help="whether to save model")
-    parser.add_argument("--log", action='store_true',
-            help="whether to log performance for inference")
+    parser.add_argument("--log", type=str, default="none",
+            help="filename of log, if none, then no log")
     args = parser.parse_args()
     print(args)
 

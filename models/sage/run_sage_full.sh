@@ -1,17 +1,17 @@
 # able to achieve 96.077% accuracy with mean aggregator on reddit dataset
 
 # training command
-# python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --train --save-model
+python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --train --save-model
 
 # inference command for cusparse
-python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference --log
+python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference --log=simrand
 return
 
 # inference command for cache sample
-python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference --cache-sample
+python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference --cache-sample --log=simrand
 
 run_sage () {
-    python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference --cache-sample --log
+    python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --cache-sample --log=simrand
 }
 
 slist=(16 32 64 128 256 512 1024)
