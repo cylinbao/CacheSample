@@ -5,6 +5,7 @@ import argparse
 import math
 import time
 
+import dgl
 import numpy as np
 import torch as th
 import torch.nn.functional as F
@@ -15,6 +16,7 @@ from ogb.nodeproppred import DglNodePropPredDataset, Evaluator
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '../..'))
 from model_utils import save_model, load_model
+from cache_sample import sample_rand_coo
 import dgl.backend.pytorch.sparse as dgl_pytorch_sp
 
 from models import GCN
@@ -119,6 +121,8 @@ def inference(model, graph):
     tic = time.time()
     feat = graph.ndata["feat"]
     model(graph, feat)
+    th.cuda.synchronize()
+
     return time.time() - tic
 
 
@@ -241,15 +245,21 @@ def run_eval(args, graph, labels, train_idx, val_idx, test_idx, evaluator, name_
             t = inference(model, graph)
             infer_times.append(t)
             print("Inference time (ms): {:.3f}".format(t*1000))
-        print("Average inference time (ms): {:.3f}".format(
-            np.mean(infer_times[:])*1000))
+    avg_t = np.mean(infer_times[3:])*1000
+    print("Average inference time: {:.3f}".format(avg_t))
 
     # print(prof.key_averages().table(sort_by="cuda_time_total"))
     events = prof.key_averages()
     for evt in events:
         if evt.key == "GSpMM":
             avg_spmm_t = evt.cuda_time*evt.count/args.n_runs/1000
+        if evt.key == "matmul":
+            avg_mtm_t = evt.cuda_time*evt.count/args.n_runs/1000
+        if evt.key == "mm":
+            avg_mm_t = evt.cuda_time*evt.count/args.n_runs/1000
     print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
+    print("Avg GEMM CUDA kernel time (ms): {:.3f}".format(avg_mtm_t+avg_mm_t))
+    return
 
     if args.log != "none":
         with open("./log/gcn_" + args.log + "_log.csv", 'a+') as f:
@@ -259,7 +269,8 @@ def run_eval(args, graph, labels, train_idx, val_idx, test_idx, evaluator, name_
                 S = 0
             string = "S, {}, ".format(S)
             string += "accuracy, {:.4f}, ".format(test_acc)
-            string += "cuda time, {:.3f}".format(avg_spmm_t)
+            string += "avg cuda time, {:.3f}, ".format(avg_spmm_t)
+            string += "avg total time, {:.3f}".format(avg_t)
             f.write(string + "\n")
 
 
@@ -291,6 +302,8 @@ def main():
             help="perform training")
     argparser.add_argument("--inference", action='store_true',
             help="perform inference")
+    argparser.add_argument("--acc_analysis", action='store_true',
+            help="perform inference")
     argparser.add_argument("--save-model", action='store_true',
             help="whether to save model")
     argparser.add_argument("--dir", type=str, default="./state_dicts/gcn/",
@@ -313,6 +326,7 @@ def main():
     splitted_idx = data.get_idx_split()
     train_idx, val_idx, test_idx = splitted_idx["train"], splitted_idx["valid"], splitted_idx["test"]
     graph, labels = data[0]
+    graph = graph.int()
 
     # add reverse edges
     srcs, dsts = graph.all_edges()
@@ -340,7 +354,6 @@ def main():
 
     name_base = "gcn_arxiv_{}_layer_{}_hidden".format(
                 args.n_layers, args.n_hidden)
-
     if args.train:
         for i in range(args.n_runs):
             val_acc, test_acc, model = run(args, graph, labels, train_idx, val_idx, test_idx, evaluator, i, name_base)
@@ -367,6 +380,28 @@ def main():
 
     if args.inference:
         run_eval(args, graph, labels, train_idx, val_idx, test_idx, evaluator, name_base)
+
+    if args.acc_analysis:
+        adj = graph.adj(scipy_fmt="coo")
+
+        accs = []
+        for i in range(0, 10, 1):
+        # for i in [4]:
+            _adj = sample_rand_coo(adj, i*0.1)
+            _graph = dgl.from_scipy(_adj)
+            _graph = _graph.remove_self_loop().add_self_loop()
+            _graph.ndata["feat"] = graph.ndata["feat"]
+            _graph = _graph.to(device)
+
+            acc = run_eval(args, _graph, labels, train_idx, val_idx, test_idx, evaluator, name_base)
+            accs.append(acc)
+
+        # with open("./log/" + "arxiv_rand_sample_acc.csv", "w") as f:
+        #     f.write("{:.5f}".format(accs[0]))
+        #     for acc in accs[1:]:
+        #         f.write(", {:.5f}".format(acc))
+        #     f.write("\n")
+        # f.close()
 
 
 if __name__ == "__main__":

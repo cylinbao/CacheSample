@@ -1,11 +1,12 @@
 # command for training gcn
-python gcn.py --gpu=0 --train --save-model
+# python gcn.py --gpu=0 --train --save-model
 
 # command for regular inference
-python gcn.py --gpu=0 --inference --log=simrand
+python gcn.py --gpu=0 --inference # --acc_analysis --log=cusparse
+return
 
 # command for using cache-sample inference
-# python gcn.py --gpu=0 --inference --cache-sample 
+python gcn.py --gpu=0 --inference --cache-sample 
 
 run_cmd () {
     python gcn.py --gpu=0 --inference --cache-sample --log=$1

@@ -235,8 +235,8 @@ def run_eval(args, graph, labels, train_idx, val_idx, test_idx, evaluator, name_
             t = inference(model, graph)
             infer_times.append(t)
             print("Inference time (ms): {:.3f}".format(t*1000))
-        print("Average inference time (ms): {:.3f}".format(
-            np.mean(infer_times[:])*1000))
+    avg_t = np.mean(infer_times[3:])*1000
+    print("Average inference time: {:.3f}".format(avg_t))
 
     # print(prof.key_averages().table(sort_by="cuda_time_total"))
     events = prof.key_averages()
@@ -253,7 +253,8 @@ def run_eval(args, graph, labels, train_idx, val_idx, test_idx, evaluator, name_
                 S = 0
             string = "S, {}, ".format(S)
             string += "accuracy, {:.4f}, ".format(test_acc)
-            string += "cuda time, {:.3f}".format(avg_spmm_t)
+            string += "avg cuda time, {:.3f}, ".format(avg_spmm_t)
+            string += "avg total time, {:.3f}".format(avg_t)
             f.write(string + "\n")
 
 

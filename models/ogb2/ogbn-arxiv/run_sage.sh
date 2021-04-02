@@ -1,14 +1,15 @@
 # command for training gcn
-python sage.py --gpu=0 --train --save-model
+# python sage.py --gpu=0 --train --save-model
 
 # command for regular inference
 python sage.py --gpu=0 --inference --log=simrand
+return
 
 # command for using cache-sample inference
-# python sage.py --gpu=0 --inference --cache-sample
+python sage.py --gpu=0 --inference --cache-sample
 
 run_cmd () {
-    python sage.py --gpu=0 --inference --cache-sample --log=$1
+    python sage.py --gpu=0 --inference  --log=$1 --cache-sample
 }
 
 slist=(16 32 64 128 256 512 1024)
