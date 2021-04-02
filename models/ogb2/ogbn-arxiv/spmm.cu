@@ -13,9 +13,9 @@
 // #define CALL_FUNC
 
 // Uncomment this line to use cache_sample kernel
-#define USE_CACHE_SAMPLE
+// #define USE_CACHE_SAMPLE
 // Uncomment this line to choose between FastRand or Bucket 
-#define USE_FASTRAND
+// #define USE_FASTRAND
 // #define USE_BUCKET
 
 namespace dgl {
