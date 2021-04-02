@@ -2,6 +2,62 @@ import numpy as np
 import scipy.sparse as sp
 import time
 
+def sample_rand_coo(coo, rate):
+    if rate == 0:
+        return coo
+
+    print("original nnz: ", coo.nnz)
+    t0 = time.time()
+    row = coo.row
+    col = coo.col
+    cut = int(row.shape[0]*rate)
+    idx = np.ones(row.shape[0], dtype="bool")
+    idx[:cut] = 0
+    np.random.shuffle(idx)
+
+    _row = row[idx]
+    _col = col[idx]
+    _data = coo.data[idx]
+    _coo = sp.coo_matrix((_data, (_row, _col)), shape=coo.shape)
+    print("sampled nnz: ", _coo.nnz)
+    print("sampled rate: ", float(_coo.nnz)/float(coo.nnz))
+    print("random sampling takes {:.6f}s".format(time.time() - t0))
+    return _coo
+
+def sample_uni_coo(coo, step):
+    print("original nnz: ", coo.nnz)
+    t0 = time.time()
+    row = coo.row
+    col = coo.col
+    nnz = coo.nnz
+    idx = np.arange(0, nnz, step, dtype=int)
+
+    _row = row[idx]
+    _col = col[idx]
+    _data = coo.data[idx]
+    _coo = sp.coo_matrix((_data, (_row, _col)), shape=coo.shape)
+    print("sampled nnz: ", _coo.nnz)
+    print("sampled rate: ", float(_coo.nnz)/float(coo.nnz))
+    print("uniform sampling takes {:.6f}s".format(time.time() - t0))
+    return _coo
+
+def cache_sample_rate(csr, s_len):
+    nnode = csr.shape[0]
+    row_ptr = csr.indptr
+    col_ind = csr.indices
+
+    acc = 0
+    for i in range(nnode):
+        nnz = row_ptr[i+1] - row_ptr[i]
+        if nnz < s_len:
+            acc += nnz
+        else:
+            acc += s_len
+
+    rate = acc/csr.nnz
+    print(f"S = {s_len}, sample rate = {rate}")
+    return rate
+
 def cache_sample_csr(csr, s_len):
     print("Processing cache sampling with length", s_len)
     t0 = time.time()
