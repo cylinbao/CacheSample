@@ -14,7 +14,8 @@
 
 // Uncomment this line to use cache_sample kernel
 // #define USE_CACHE_SAMPLE
-// Uncomment this line to choose SIMRAND as sampling 
+// Uncomment this line to choose between FastRand or Bucket 
+// #define USE_FASTRAND
 // #define USE_BUCKET
 
 namespace dgl {
@@ -256,7 +257,7 @@ __device__ __forceinline__ float sum_init() {
 
 // Idtype = int32_t
 template<typename IdType>
-__global__ void CacheSampleSpMM_bucket(
+__global__ void CacheSampleSpMM_Bucket(
   const int m, const int k, const int s,
   const IdType* A_indptr, const IdType* A_indices,
   const float* B, float* C)
@@ -273,12 +274,12 @@ __global__ void CacheSampleSpMM_bucket(
     int offset;
     float acc1 = sum_init();
     int nnz = hb - lb;
-    float norm = 0.0;
+    float norm;
 
     if (nnz < s)
-      norm = 1/float(nnz);
+      norm = float(nnz) + 1.0;
     else
-      norm = 1/float(s);
+      norm = float(s) + 1.0;
 
     for (int ss = threadIdx.x; ss < s && (lb+ss) < hb; ss+=blockDim.x) {
       sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
@@ -291,14 +292,14 @@ __global__ void CacheSampleSpMM_bucket(
         acc1 = sum_reduce(acc1, B[offset]);
       }
       offset = rid*k + cid;
-      C[offset] = acc1*norm;
+      C[offset] = acc1/norm;
     }
   }
 }
 
 // IdType = int32_t
 template<typename IdType>
-__global__ void CacheSampleSpMM_simrand(
+__global__ void CacheSampleSpMM_FastRand(
   const int m, const int k, const int s,
   const IdType* A_indptr, const IdType* A_indices,
   const float* B, float* C)
@@ -315,12 +316,12 @@ __global__ void CacheSampleSpMM_simrand(
     int offset;
     float acc1 = sum_init();
     int nnz = hb - lb;
-    float norm = 0.0;
+    float norm;
 
     if (nnz < s)
-      norm = 1/float(nnz);
+      norm = float(nnz) + 1.0;
     else
-      norm = 1/float(s);
+      norm = float(s) + 1.0;
 
     if (nnz < s) {
       for (int ss = threadIdx.x; (lb+ss) < hb; ss+=blockDim.x)
@@ -340,13 +341,13 @@ __global__ void CacheSampleSpMM_simrand(
         acc1 = sum_reduce(acc1, B[offset]);
       }
       offset = rid*k + cid;
-      C[offset] = acc1*norm;
+      C[offset] = acc1/norm;
     }
   }
 }
 
 // IdType = int32_t
-__global__ void CacheSampleSpMM_Mul_bucket(
+__global__ void CacheSampleSpMM_Mul_Bucket(
   const int m, const int k, const int s,
   const int32_t* A_indptr, const int32_t* A_indices,
   const float* A_data,
@@ -384,7 +385,7 @@ __global__ void CacheSampleSpMM_Mul_bucket(
 }
 
 // IdType = int32_t
-__global__ void CacheSampleSpMM_Mul_simrand(
+__global__ void CacheSampleSpMM_Mul_FastRand(
   const int m, const int k, const int s,
   const int32_t* A_indptr, const int32_t* A_indices,
   const float* A_data,
@@ -450,22 +451,26 @@ void XCacheSampleCsrmm<int32_t, float>(
   const float* B_data, float* C_data,
   dim3 grid, dim3 block,
   int shmem) {
+  
   auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
-#ifndef USE_BUCKET
-  CUDA_KERNEL_CALL(CacheSampleSpMM_simrand<int32_t>, 
-    grid, block, shmem, thr_entry->stream, 
+#ifdef USE_FASTRAND
+  CUDA_KERNEL_CALL(CacheSampleSpMM_FastRand<int32_t>, 
+    grid, block, shmem, 
+    thr_entry->stream, 
     m, n, s,
     A_indptr,
     A_indices,
     B_data, C_data);
-#else
-  CUDA_KERNEL_CALL(CacheSampleSpMM_bucket<int32_t>, 
+#endif
+#ifdef USE_BUCKET
+  CUDA_KERNEL_CALL(CacheSampleSpMM_Bucket<int32_t>, 
     grid, block, shmem, thr_entry->stream, 
     m, n, s,
     A_indptr,
     A_indices,
     B_data, C_data);
 #endif
+  cudaStreamSynchronize(thr_entry->stream);
 }
 
 template <>
@@ -476,22 +481,26 @@ void XCacheSampleCsrmm<int64_t, float>(
   const float* B_data, float* C_data,
   dim3 grid, dim3 block,
   int shmem) {
+
   auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
-#ifndef USE_BUCKET
-  CUDA_KERNEL_CALL(CacheSampleSpMM_simrand<int64_t>, 
-    grid, block, shmem, thr_entry->stream, 
+#ifdef USE_FASTRAND
+  CUDA_KERNEL_CALL(CacheSampleSpMM_FastRand<int64_t>, 
+    grid, block, shmem,
+    thr_entry->stream, 
     m, n, s,
     A_indptr,
     A_indices,
     B_data, C_data);
-#else
-  CUDA_KERNEL_CALL(CacheSampleSpMM_bucket<int64_t>, 
+#endif
+#ifdef USE_BUCKET
+  CUDA_KERNEL_CALL(CacheSampleSpMM_Bucket<int64_t>, 
     grid, block, shmem, thr_entry->stream, 
     m, n, s,
     A_indptr,
     A_indices,
     B_data, C_data);
 #endif
+  cudaStreamSynchronize(thr_entry->stream);
 }
 
 template <typename DType>
@@ -516,19 +525,21 @@ void XCacheSampleCsrmmMul<float>(
   dim3 grid, dim3 block,
   int shmem) {
   auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
-#ifndef USE_BUCKET
-  CUDA_KERNEL_CALL(CacheSampleSpMM_Mul_simrand, 
-    grid, block, shmem*2, thr_entry->stream, 
-    m, n, s,
-    A_indptr, A_indices, A_data,
-    B_data, C_data);
-#else
-  CUDA_KERNEL_CALL(CacheSampleSpMM_Mul_bucket, 
+#ifdef USE_FASTRAND
+  CUDA_KERNEL_CALL(CacheSampleSpMM_Mul_FastRand, 
     grid, block, shmem*2, thr_entry->stream, 
     m, n, s,
     A_indptr, A_indices, A_data,
     B_data, C_data);
 #endif
+#ifdef USE_BUCKET
+  CUDA_KERNEL_CALL(CacheSampleSpMM_Mul_Bucket, 
+    grid, block, shmem*2, thr_entry->stream, 
+    m, n, s,
+    A_indptr, A_indices, A_data,
+    B_data, C_data);
+#endif
+  cudaStreamSynchronize(thr_entry->stream);
 }
 
 void printKernelInfo(char name[], dim3 grid, dim3 blk, int shmem, 
@@ -767,13 +778,19 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
   cudaEventRecord(cuda_stop);
   cudaEventSynchronize(cuda_stop);
 
-  static float kernel_time_acc = 0;
-  float cuda_kernel_time = 0;
-  cudaEventElapsedTime(&cuda_kernel_time, cuda_start, cuda_stop);
-  kernel_time_acc += cuda_kernel_time;
+  float msecPerSpMM = 0;
+  cudaEventElapsedTime(&msecPerSpMM, cuda_start, cuda_stop);
+  double flopsPerSpMM = 2.0 * static_cast<double>(csr.data->shape[0]) *
+                              static_cast<double>(ufeat->shape[1]);
+  double gigaFlops = (flopsPerSpMM * 1.0e-9f) /
+                     (msecPerSpMM / 1000.0f);
+
   std::cout << __LINE__ << ": SpMMCsr() cudaEventElapsed time (ms): " 
-            << cuda_kernel_time << ", accumulated time (ms): "
-            << kernel_time_acc << std::endl;
+            << msecPerSpMM << std::endl
+            << " nnz: " << csr.data->shape[0]
+            << " K: " << ufeat->shape[1]
+            << " GFlops: " << flopsPerSpMM * 1.0e-9f << std::endl
+            << " Performance (GFlops/s): " << gigaFlops << std::endl;
 #endif
 }
 

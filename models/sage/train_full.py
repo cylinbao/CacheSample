@@ -72,7 +72,7 @@ def inference(model, graph, features):
         logits = model(graph, features)
         return time.time() - t0
 
-def main(args):
+def main(args, n_running, name_base):
     # load and preprocess dataset
     data = load_data(args)
     g = data[0]
@@ -131,11 +131,10 @@ def main(args):
         model.cuda()
 
     if args.inference:
-        model_name = "graphsage_{}_agg_{}_n_layer_{}_n_hidden_{}_best.sd".format(
-            args.dataset, args.aggregator_type, args.n_layers, args.n_hidden)
-        model = load_model(args.dir, model, model_name)
+        model_name = name_base + "_best.pt"
+        model = load_model(args.dir, model, model_name)  
         acc = evaluate(model, g, features, labels, test_nid)
-        print("Test accuracy {:.3%}".format(acc))
+        print("Test accuracy {:.3%}".format(acc))  
 
         num_run = 10
         times = []
@@ -147,6 +146,8 @@ def main(args):
                 print("Inference time: {:.3f}".format(t))
         print("Average inference time: {:.3f}".format(
             np.mean(times[3:])*1000))
+        avg_t = np.mean(times[3:])*1000
+        print("Average inference time: {:.3f}".format(avg_t))
 
         # print(prof.key_averages().table(sort_by="cuda_time_total"))
         events = prof.key_averages()
@@ -157,15 +158,17 @@ def main(args):
         print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
 
         if args.log != "none":
-            with open(args.dataset + "_" + args.log + "_log.csv", 'a+') as f:
+            with open("./log/" + args.dataset + "_" + args.log + "_log.csv", 'a+') as f:
                 if args.cache_sample:
                     S = dgl_pytorch_sp.S
                 else:
                     S = 0
                 string = "S, {}, ".format(S)
                 string += "accuracy, {:.4f}, ".format(acc)
-                string += "cuda time, {:.3f}".format(avg_spmm_t)
+                string += "avg cuda time, {:.3f}, ".format(avg_spmm_t)
+                string += "avg total time, {:.3f}".format(avg_t)
                 f.write(string + "\n")
+        return 
 
     if args.train:
         # use optimizer
@@ -173,6 +176,7 @@ def main(args):
 
         # initialize graph
         dur = []
+        best_val_acc = 0
         for epoch in range(args.n_epochs):
             model.train()
             if epoch >= 3:
@@ -192,6 +196,13 @@ def main(args):
             print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
                   "ETputs(KTEPS) {:.2f}".format(epoch, np.mean(dur), loss.item(),
                                                 acc, n_edges / np.mean(dur) / 1000))
+            
+            if best_val_acc < acc:
+                best_val_acc = acc
+
+                if args.save_model:
+                    model_name = name_base + "_best_{}.pt".format(n_running)
+                    save_model(args.dir, model, model_name)
 
         print()
         acc = evaluate(model, g, features, labels, test_nid)
@@ -231,24 +242,29 @@ if __name__ == '__main__':
             help="whether to save model")
     parser.add_argument("--log", type=str, default="none",
             help="filename of log, if none, then no log")
+    parser.add_argument("--n-runs", type=int, default=10,
+            help="filename of log, if none, then no log")
     args = parser.parse_args()
     print(args)
 
     assert (args.train or args.inference) == True
 
+    test_accs = []
+    name_base = "sage_{}_{}_agg_{}_layer_{}_hidden".format(args.dataset, 
+                args.aggregator_type, args.n_layers, args.n_hidden)
     if args.train:
-        run = 10
-        acc_arr = []
-        model_arr = []
-        for i in range(run):
-            acc, model = main(args)
-            acc_arr.append(acc)
-            model_arr.append(model)
+        for i in range(args.n_runs):
+            acc, model = main(args, i, name_base)
+            test_accs.append(acc)
+        
         if args.save_model:
-            best_model = model_arr[np.argmax(acc_arr)]
-            model_name = "graphsage_{}_agg_{}_n_layer_{}_n_hidden_{}_best.sd".format(
-                args.dataset, args.aggregator_type, args.n_layers, args.n_hidden)
-            save_model(args.dir, best_model, model_name)
+            best_idx = np.argmax(test_accs)
+            print("best_idx: ", best_idx)
+            print("best test acc: ", test_accs[best_idx])
+            model_name = name_base + "_best"
+            cmd = "cp {}/{}_{}.pt {}/{}.pt".format(args.dir, model_name, best_idx, args.dir, model_name)
+            os.system(cmd)
+            # os.system("rm ./{}/{}_*.pt".format(args.dir, model_name))
     else:
-        main(args)
+        main(args, 0, name_base)
 
