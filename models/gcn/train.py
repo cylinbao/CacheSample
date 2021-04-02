@@ -11,7 +11,8 @@ from dgl.data import RedditDataset
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from model_utils import save_model, load_model
-# from cache_sample import cache_sample_rand_csr, cache_sample_simrand_csr
+from cache_sample import sample_rand_coo
+import dgl.backend.pytorch.sparse as dgl_pytorch_sp
 
 from gcn import GCN
 
@@ -31,9 +32,11 @@ def inference(model, g, features):
     t0 = time.time()
     with torch.no_grad():
         logits = model(g, features)
-        return time.time() - t0
+    torch.cuda.synchronize()
 
-def main(args):
+    return time.time() - t0
+
+def run(args, n_run, name_base):
     # load and preprocess dataset
     if args.dataset == 'cora':
         data = CoraGraphDataset()
@@ -80,6 +83,12 @@ def main(args):
         norm = norm.cuda()
     g.ndata['norm'] = norm.unsqueeze(1)
 
+    if args.cache_sample:
+        norm = 'none'
+    else:
+        norm = 'right'
+        # norm = 'none'
+
     # create GCN model
     model = GCN(in_feats,
                 args.n_hidden,
@@ -87,33 +96,28 @@ def main(args):
                 args.n_layers,
                 F.relu,
                 args.dropout,
-                args.norm)
+                norm)
 
     if cuda:
         model.cuda()
-
-    if args.norm == "none":
-        norm = "right"
-    else:
-        norm = args.norm
-    model_name = "gcn_{}_norm_{}_n_layer_{}_n_hidden_{}.sd".format(
-        args.dataset, norm, args.n_layers, args.n_hidden)
-
+    
     if args.inference:
+        model_name = name_base + "_best.pt"
         model = load_model(args.dir, model, model_name)
         acc = evaluate(model, g, features, labels, test_mask)
         print("Test accuracy {:.3%}".format(acc))
 
         num_run = 10
         times = []
+
         import torch.autograd.profiler as profiler
         with profiler.profile(use_cuda=True) as prof:
             for i in range(num_run):
                 t = inference(model, g, features)
                 times.append(t)
                 print("Inference time: {:.3f}".format(t))
-        print("Average inference time: {:.3f}".format(
-            np.mean(times[3:])*1000))
+        avg_t = np.mean(times[3:])*1000
+        print("Average inference time: {:.3f}".format(avg_t))
 
         # print(prof.key_averages().table(sort_by="cuda_time_total"))
         events = prof.key_averages()
@@ -121,7 +125,25 @@ def main(args):
             if evt.key == "GSpMM":
                 # print(evt.self_cuda_time_total_str)
                 avg_spmm_t = evt.cuda_time*evt.count/num_run/1000
+            if evt.key == "matmul":
+                avg_matmul_t = evt.cuda_time*evt.count/num_run/1000
+            if evt.key == "mm":
+                avg_mm_t = evt.cuda_time*evt.count/num_run/1000
         print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
+        print("Avg GEMM CUDA kernel time (ms): {:.3f}".format(avg_mm_t+avg_matmul_t))
+        return
+
+        if args.log != "none":
+            with open("./log/" + args.dataset + "_" + args.log + "_log.csv", 'a+') as f:
+                if args.cache_sample:
+                    S = dgl_pytorch_sp.S
+                else:
+                    S = 0
+                string = "S, {}, ".format(S)
+                string += "accuracy, {:.4f}, ".format(acc)
+                string += "avg cuda time, {:.3f}, ".format(avg_spmm_t)
+                string += "avg total time, {:.3f}".format(avg_t)
+                f.write(string + "\n")
         return 
 
     loss_fcn = torch.nn.CrossEntropyLoss()
@@ -133,6 +155,7 @@ def main(args):
 
     # initialize graph
     dur = []
+    best_val_acc = 0
     for epoch in range(args.n_epochs):
         model.train()
         if epoch >= 3:
@@ -152,13 +175,18 @@ def main(args):
         print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
               "ETputs(KTEPS) {:.2f}". format(epoch, np.mean(dur), loss.item(),
                                              acc, n_edges / np.mean(dur) / 1000))
+                                    
+        if best_val_acc < acc:
+            best_val_acc = acc
+            if args.save_model:
+                model_name = name_base + "_best_{}.pt".format(n_run)
+                save_model(args.dir, model, model_name)
 
     print()
     acc = evaluate(model, g, features, labels, test_mask)
     print("Test accuracy {:.2%}".format(acc))
 
-    save_model(args.dir, model, model_name)
-
+    return acc
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GCN')
@@ -169,6 +197,8 @@ if __name__ == '__main__':
             help="gpu")
     parser.add_argument("--lr", type=float, default=1e-2,
             help="learning rate")
+    parser.add_argument("--n-runs", type=int, default=10,
+            help="number of training runs")
     parser.add_argument("--n-epochs", type=int, default=200,
             help="number of training epochs")
     parser.add_argument("--n-hidden", type=int, default=16,
@@ -179,14 +209,47 @@ if __name__ == '__main__':
             help="Weight for L2 loss")
     parser.add_argument("--self-loop", action='store_true',
             help="graph self-loop (default=False)")
-    parser.add_argument("--norm", type=str, default='both',
-            help="setup norm strategy")
+    #parser.add_argument("--norm", type=str, default='both',
+    #        help="setup norm strategy")
+    parser.add_argument("--train", action='store_true',
+            help="perform training")
     parser.add_argument("--inference", action='store_true',
             help="whether to just perform inference (default=False)")
-    parser.add_argument("--dir", type=str, default="state_dicts",
+    parser.add_argument("--dir", type=str, default="./state_dicts",
             help="directory to store model's state dict")
+    parser.add_argument("--save-model", action='store_true',
+            help="whether to save model")
+    parser.add_argument("--log", type=str, default="none",
+            help="filename of log, if none, then no log")
+    parser.add_argument("--cache-sample", action='store_true',
+            help="Use CacheSample kernel")
     parser.set_defaults(self_loop=False)
     args = parser.parse_args()
+
+    args.dir = args.dir + '/' + args.dataset 
     print(args)
 
-    main(args)
+    # main(args)
+
+    test_accs = []
+    name_base = "gcn_{}_{}_layer_{}_hidden".format(
+                 args.dataset, args.n_layers, args.n_hidden)
+    if args.train:
+        for i in range(args.n_runs):
+            test_acc = run(args, i, name_base)
+            test_accs.append(test_acc)
+
+        if args.save_model:
+            best_idx = np.argmax(test_accs)
+            print("best_idx: ", best_idx)
+            model_name = name_base + "_best"
+            cmd = "cp {}/{}_{}.pt {}/{}.pt".format(args.dir, model_name, best_idx, args.dir, model_name)
+            os.system(cmd)
+            # os.system("rm ./state_dicts/{}_*.pt")
+
+        print(f"Runned {args.n_runs} times")
+        print(f"Test Accs: {test_accs}")
+        print(f"Average test accuracy: {np.mean(test_accs)} ± {np.std(test_accs)}")
+
+    if args.inference:
+        run(args, 0, name_base)
