@@ -12,7 +12,9 @@
 // #define KERNEL_INFO
 // #define CALL_FUNC
 
-// Uncomment this line to use cache_sample kernel
+#define USE_CUSPARSE
+// #define USE_GE_SPMM
+// #define USE_MERGE_SPMM
 // #define USE_CACHE_SAMPLE
 // Uncomment this line to choose between FastRand or Bucket 
 // #define USE_FASTRAND
@@ -21,6 +23,10 @@
 namespace dgl {
 
 using namespace cuda;
+
+#ifdef USE_GE_SPMM
+#include "./gespmm.cuh"
+#endif
 
 namespace aten {
 namespace {
@@ -714,7 +720,15 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
           static_cast<DType*>(ufeat->data),
           static_cast<DType*>(out->data),
           x_length, S);
-#else
+#endif
+#ifdef USE_GE_SPMM
+      GeSpmmCsrmm<DType>(
+          ufeat->ctx, csr,
+          static_cast<DType*>(ufeat->data),
+          static_cast<DType*>(out->data),
+          x_length);
+#endif
+#ifdef USE_CUSPARSE
       cusparse::CusparseCsrmm2<IdType, DType>(
           ufeat->ctx, csr,
           static_cast<DType*>(ufeat->data),
