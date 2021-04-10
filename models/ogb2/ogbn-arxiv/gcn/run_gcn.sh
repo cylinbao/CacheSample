@@ -2,7 +2,7 @@
 # python gcn.py --gpu=0 --train --save-model
 
 # command for regular inference
-python gcn.py --gpu=0 --inference # --acc_analysis --log=cusparse
+python gcn.py --gpu=0 --inference # --log=cusparse --acc_analysis 
 return
 
 # command for using cache-sample inference

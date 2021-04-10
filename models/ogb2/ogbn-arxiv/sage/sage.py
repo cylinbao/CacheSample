@@ -13,7 +13,7 @@ from matplotlib import pyplot as plt
 from matplotlib.ticker import AutoMinorLocator, MultipleLocator
 from ogb.nodeproppred import DglNodePropPredDataset, Evaluator
 import os, sys
-sys.path.insert(1, os.path.join(sys.path[0], '../..'))
+sys.path.insert(1, os.path.join(sys.path[0], '../../..'))
 from model_utils import save_model, load_model
 import dgl.backend.pytorch.sparse as dgl_pytorch_sp
 
