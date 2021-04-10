@@ -3,20 +3,16 @@
  * \file array/cuda/spmm.cu
  * \brief SPMM C APIs and definitions.
  */
+// #define KERNEL_TIME
+// #define KERNEL_INFO
+// #define CALL_FUNC
+// #define USE_CACHE_SAMPLE
+
 #include <dgl/array.h>
 #include "./spmm.cuh"
 #include "./functor.cuh"
 #include "../../runtime/cuda/cuda_common.h"
-
-// #define KERNEL_TIME
-// #define KERNEL_INFO
-// #define CALL_FUNC
-
-// Uncomment this line to use cache_sample kernel
-// #define USE_CACHE_SAMPLE
-// Uncomment this line to choose between FastRand or Bucket 
-// #define USE_FASTRAND
-// #define USE_BUCKET
+#include "./csspmm.cuh"
 
 namespace dgl {
 
@@ -246,7 +242,7 @@ void CusparseCsrmm2(
       C_data, n));
   device->FreeWorkspace(ctx, trans_out);
 }
-
+/*
 __device__ __forceinline__ float sum_reduce(float acc, float x) {
   return acc + x;
 }
@@ -541,7 +537,7 @@ void XCacheSampleCsrmmMul<float>(
 #endif
   cudaStreamSynchronize(thr_entry->stream);
 }
-
+*/
 void printKernelInfo(char name[], dim3 grid, dim3 blk, int shmem, 
         int m, int n, int s) {
   std::cout << name << "<<<(" << grid.x << ", " << grid.y << ", " << grid.z
@@ -642,6 +638,30 @@ void CacheSampleCsrmmMul(
     A_data, B_data, C_data,
     grid, block, shmem);
 }
+/*
+template <typename IdType, typename DType>
+void GeSpmmCsrmm(
+  const DLContext& ctx,
+  const aten::CSRMatrix& csr,
+  const DType* B_data, DType* C_data,
+  int x_length) {
+
+  auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
+  const int m = csr.num_rows;
+  const int n = x_length;
+  typedef int32_t Idx;
+
+  XTopoCsrmm<DType>(ctx,
+    m, n, 
+    static_cast<IdType*>(csr.indptr->data),
+    static_cast<IdType*>(csr.indices->data),
+    B_data, C_data
+  );
+
+  cudaStreamSynchronize(thr_entry->stream);
+  CUDA_CALL(cudaGetLastError());
+}
+*/
 }  // namespace cusparse
 
 #define SWITCH_OP(op, Op, ...)                                      \
@@ -714,6 +734,17 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
           static_cast<DType*>(ufeat->data),
           static_cast<DType*>(out->data),
           x_length, S);
+// #endif
+/*
+#ifdef USE_GE_SPMM
+      GeSpmmCsrmm<IdType, DType>(
+          ufeat->ctx, csr,
+          static_cast<DType*>(ufeat->data),
+          static_cast<DType*>(out->data),
+          x_length);
+#endif
+*/
+// #ifdef USE_CUSPARSE
 #else
       cusparse::CusparseCsrmm2<IdType, DType>(
           ufeat->ctx, csr,
