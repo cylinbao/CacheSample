@@ -15,7 +15,7 @@ import torch_geometric.transforms as PyG_T
 # from ogb.nodeproppred import DglNodePropPredDataset
 from ogb.nodeproppred import PygNodePropPredDataset, Evaluator
 import os, sys
-sys.path.insert(1, os.path.join(sys.path[0], '../..'))
+sys.path.insert(1, os.path.join(sys.path[0], '../../..'))
 from model_utils import save_model, load_model
 from cache_sample import sample_rand_coo
 import dgl.backend.pytorch.sparse as dgl_pytorch_sp
@@ -322,6 +322,10 @@ def main():
 
     if args.acc_analysis:
         adj = graph.adj(scipy_fmt="coo")
+        import scipy as sp
+        sp.io.mmwrite("ogbn-proteins.mtx", adj, field='integer', 
+                      symmetry='symmetric')
+        return
 
         accs = []
         for i in range(0, 10, 1):

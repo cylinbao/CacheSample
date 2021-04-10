@@ -2,7 +2,7 @@
 # python gcn.py --gpu=1 --train --save-model --n-runs=7 --dir=./state_dicts/gcn_bias/
 
 # command for regular inference
-python gcn.py --gpu=0 --dir=./state_dicts/gcn_bias/ --inference # --log=cusparse # --acc_analysis 
+python gcn.py --gpu=0 --dir=./state_dicts/gcn_bias/ --inference # --log=cusparse --acc_analysis  
 return
 
 # command for using cache-sample inference
