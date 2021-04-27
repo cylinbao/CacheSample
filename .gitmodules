@@ -2,3 +2,6 @@
 	path = dgl
 	url = git@github.com:uwsampl/dgl.git
 	branch = cache_sample
+[submodule "spmm_test/merge-spmm"]
+	path = spmm_test/merge-spmm
+	url = https://github.com/owensgroup/merge-spmm.git
