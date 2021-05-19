@@ -6,7 +6,6 @@
 // #define KERNEL_TIME
 // #define KERNEL_INFO
 // #define CALL_FUNC
-// #define USE_CACHE_SAMPLE
 
 #include <dgl/array.h>
 #include "./spmm.cuh"
@@ -580,13 +579,19 @@ void CacheSampleCsrmm(
   dim3 block = dim3(DIM_X, DIM_Y, 1);
   int shmem = (S*DIM_Y*sizeof(int));
 
+  srand (time(NULL));
+  int primes[10] = {577, 769, 983, 1193, 1429,
+                    1619, 1871, 2089, 2339, 2579};
+  int p_idx = rand() % 10;
+  int P = primes[p_idx];
+
 #ifdef KERNEL_INFO
   char kernel_name[] = "CacheSampleCsrmm()";
-  printKernelInfo(kernel_name, grid, block, shmem, M, N, S);
+  printKernelInfo(kernel_name, grid, block, shmem, M, N, S, P);
 #endif
 
   XCacheSampleCsrmm<IdType, DType>(
-    M, N, S,
+    M, N, S, P,
     static_cast<IdType*>(csr.indptr->data),
     static_cast<IdType*>(csr.indices->data),
     B_data, C_data,
@@ -702,6 +707,7 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
              NDArray efeat,
              NDArray out,
              std::vector<NDArray> out_aux,
+             const std::string& kernel,
              const int S) {
 #ifdef CALL_FUNC
   LOG(INFO) << "calling SpMMCsr()";
@@ -728,31 +734,21 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
       for (int i = 1; i < ufeat->ndim; ++i)
         x_length *= ufeat->shape[i];
       // SWITCH between cusparse and cache_sample kernel
-#ifdef USE_CACHE_SAMPLE
-      cusparse::CacheSampleCsrmm<IdType, DType>(
-          ufeat->ctx, csr,
-          static_cast<DType*>(ufeat->data),
-          static_cast<DType*>(out->data),
-          x_length, S);
-// #endif
-/*
-#ifdef USE_GE_SPMM
-      GeSpmmCsrmm<IdType, DType>(
-          ufeat->ctx, csr,
-          static_cast<DType*>(ufeat->data),
-          static_cast<DType*>(out->data),
-          x_length);
-#endif
-*/
-// #ifdef USE_CUSPARSE
-#else
-      cusparse::CusparseCsrmm2<IdType, DType>(
-          ufeat->ctx, csr,
-          static_cast<DType*>(ufeat->data),
-          nullptr,
-          static_cast<DType*>(out->data),
-          x_length);
-#endif
+      if (kernel == "cuSPARSE") {
+        cusparse::CusparseCsrmm2<IdType, DType>(
+            ufeat->ctx, csr,
+            static_cast<DType*>(ufeat->data),
+            nullptr,
+            static_cast<DType*>(out->data),
+            x_length);
+      }
+      else if (kernel == "CacheSample") {
+        cusparse::CacheSampleCsrmm<IdType, DType>(
+            ufeat->ctx, csr,
+            static_cast<DType*>(ufeat->data),
+            static_cast<DType*>(out->data),
+            x_length, S);
+      }
     } else if (sizeof(IdType) == 4 && op == "mul" && efeat.NumElements() == csr.indices->shape[0]) {
 #ifdef CALL_FUNC
       LOG(INFO) << "op == mul";
@@ -860,22 +856,22 @@ template void SpMMCsr<kDLGPU, int32_t, float>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const int);
+    const std::string& kernel, const int S);
 template void SpMMCsr<kDLGPU, int64_t, float>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const int);
+    const std::string& kernel, const int S);
 template void SpMMCsr<kDLGPU, int32_t, double>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const int);
+    const std::string& kernel, const int S);
 template void SpMMCsr<kDLGPU, int64_t, double>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const int);
+    const std::string& kernel, const int S);
 
 template void SpMMCoo<kDLGPU, int32_t, float>(
     const std::string& op, const std::string& reduce,

@@ -52,7 +52,7 @@ __global__ void CacheSampleSpMM_Bucket(
 // IdType = int32_t
 template<typename IdType>
 __global__ void CacheSampleSpMM_FastRand(
-  const int m, const int k, const int s,
+  const int m, const int k, const int s, const int p,
   const IdType* A_indptr, const IdType* A_indices,
   const float* B, float* C)
 {
@@ -81,7 +81,8 @@ __global__ void CacheSampleSpMM_FastRand(
     }
     else {
       for (int ss = threadIdx.x; ss < s; ss+=blockDim.x) {
-        offset = lb + ((ss*577) % nnz);
+        // offset = lb + ((ss*577) % nnz);
+        offset = lb + ((ss*p) % nnz);
         sh[(sm_offset + ss)] = A_indices[offset]*k;
       }
     }
@@ -187,7 +188,7 @@ __global__ void CacheSampleSpMM_Mul_FastRand(
 
 template <typename IdType, typename DType>
 void XCacheSampleCsrmm(
-  int m, int n, int s,
+  int m, int n, int s, int p,
   const IdType* A_indptr,
   const IdType* A_indices,
   const DType* B_data, DType* C_data,
@@ -198,7 +199,7 @@ void XCacheSampleCsrmm(
 
 template <>
 void XCacheSampleCsrmm<int32_t, float>(
-  int m, int n, int s,
+  int m, int n, int s, int p,
   const int32_t* A_indptr,
   const int32_t* A_indices,
   const float* B_data, float* C_data,
@@ -210,7 +211,7 @@ void XCacheSampleCsrmm<int32_t, float>(
   CUDA_KERNEL_CALL(CacheSampleSpMM_FastRand<int32_t>, 
     grid, block, shmem, 
     thr_entry->stream, 
-    m, n, s,
+    m, n, s, p,
     A_indptr,
     A_indices,
     B_data, C_data);
@@ -228,7 +229,7 @@ void XCacheSampleCsrmm<int32_t, float>(
 
 template <>
 void XCacheSampleCsrmm<int64_t, float>(
-  int m, int n, int s,
+  int m, int n, int s, int p,
   const int64_t* A_indptr,
   const int64_t* A_indices,
   const float* B_data, float* C_data,
@@ -240,7 +241,7 @@ void XCacheSampleCsrmm<int64_t, float>(
   CUDA_KERNEL_CALL(CacheSampleSpMM_FastRand<int64_t>, 
     grid, block, shmem,
     thr_entry->stream, 
-    m, n, s,
+    m, n, s, p,
     A_indptr,
     A_indices,
     B_data, C_data);

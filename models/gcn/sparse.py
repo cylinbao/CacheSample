@@ -4,6 +4,9 @@ from ...sparse import _gspmm, _gsddmm
 
 __all__ = ['gspmm', 'gsddmm', 'edge_softmax']
 # CONFIGURE S here, will be used in GSpMM in line 62
+
+kernels = ['cuSPARSE', 'CacheSample']
+K = kernels[0]
 S = 128
 
 def _reduce_grad(grad, shape):
@@ -62,7 +65,7 @@ def _expand(x, shape):
 class GSpMM(th.autograd.Function):
     @staticmethod
     def forward(ctx, gidx, op, reduce_op, X, Y):
-        out, (argX, argY) = _gspmm(gidx, op, reduce_op, X, Y, S)
+        out, (argX, argY) = _gspmm(gidx, op, reduce_op, X, Y, K, S)
         ctx.backward_cache = gidx, op, reduce_op
         ctx.save_for_backward(X, Y, argX, argY)
         return out
