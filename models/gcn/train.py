@@ -83,11 +83,17 @@ def run(args, n_run, name_base):
         norm = norm.cuda()
     g.ndata['norm'] = norm.unsqueeze(1)
 
-    if args.cache_sample:
+    # if args.cache_sample:
+    #     kernel = "CacheSample"
+    #     norm = 'none'
+    # else:
+    #     kernel = "cuSPARSE"
+    #     norm = 'right'
+
+    if args.kernel == "CacheSample":
         norm = 'none'
     else:
         norm = 'right'
-        # norm = 'none'
 
     # create GCN model
     model = GCN(in_feats,
@@ -96,7 +102,9 @@ def run(args, n_run, name_base):
                 args.n_layers,
                 F.relu,
                 args.dropout,
-                norm)
+                norm,
+                args.kernel,
+                args.S)
 
     if cuda:
         model.cuda()
@@ -221,8 +229,10 @@ if __name__ == '__main__':
             help="whether to save model")
     parser.add_argument("--log", type=str, default="none",
             help="filename of log, if none, then no log")
-    parser.add_argument("--cache-sample", action='store_true',
-            help="Use CacheSample kernel")
+    parser.add_argument("--kernel", type=str, default="cuSPARSE",
+            help="Define kernel from cuSPARSE and CacheSample")
+    parser.add_argument("--S", type=int, default=128,
+            help="Define S value for CacheSample kernel")
     parser.set_defaults(self_loop=False)
     args = parser.parse_args()
 

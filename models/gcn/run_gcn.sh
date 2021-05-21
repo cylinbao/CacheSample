@@ -1,14 +1,14 @@
 # able to achieve 94.45% accuracy on reddit dataset
 
 # training commend, modify parameters for your need
-# python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --n-runs=3 --train --save-model
+# python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --n-epochs=200 --n-runs=1 --train # --cache-sample --save-model
 
 # inference commend, for the original kernel
-python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --inference # --log=cusparse
+python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --inference --kernel=cuSPARSE # --log=cusparse
 return
 
 # inference commend, use --norm=none for cache_sample kernel
-python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --inference --cache-sample # --log=simrand
+python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --inference --kernel=CacheSample --S=128 # --log=simrand
 
 run_cmd () {
     python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --inference --cache-sample --log=$1

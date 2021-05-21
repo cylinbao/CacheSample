@@ -17,16 +17,21 @@ class GCN(nn.Module):
                  n_layers,
                  activation,
                  dropout,
-                 norm):
+                 norm,
+                 kernel="cuSPARSE",
+                 S=0):
         super(GCN, self).__init__()
         self.layers = nn.ModuleList()
         # input layer
-        self.layers.append(GraphConv(in_feats, n_hidden, norm=norm, activation=activation))
+        self.layers.append(GraphConv(in_feats, n_hidden, norm=norm, 
+            activation=activation, kernel=kernel, S=S))
         # hidden layers
         for i in range(n_layers - 1):
-            self.layers.append(GraphConv(n_hidden, n_hidden, norm=norm, activation=activation))
+            self.layers.append(GraphConv(n_hidden, n_hidden, norm=norm, 
+                activation=activation, kernel=kernel, S=S))
         # output layer
-        self.layers.append(GraphConv(n_hidden, n_classes, norm=norm))
+        self.layers.append(GraphConv(n_hidden, n_classes, norm=norm, 
+            kernel=kernel, S=S))
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, g, features):
