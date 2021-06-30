@@ -19,6 +19,7 @@ import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from model_utils import save_model, load_model
 import dgl.backend.pytorch.sparse as dgl_pytorch_sp
+import torch.autograd.profiler as profiler
 
 
 class GraphSAGE(nn.Module):
@@ -30,19 +31,27 @@ class GraphSAGE(nn.Module):
                  activation,
                  dropout,
                  aggregator_type,
-                 use_cache_sample):
+                 kernel="cuSPARSE",
+                 S=128):
+                 # use_cache_sample):
         super(GraphSAGE, self).__init__()
         self.layers = nn.ModuleList()
         self.dropout = nn.Dropout(dropout)
         self.activation = activation
 
         # input layer
-        self.layers.append(SAGEConv(in_feats, n_hidden, aggregator_type, use_cache_sample=use_cache_sample))
+        self.layers.append(SAGEConv(in_feats, n_hidden, aggregator_type, 
+            kernel=kernel, S=S))
+            # use_cache_sample=use_cache_sample))
         # hidden layers
         for i in range(n_layers - 1):
-            self.layers.append(SAGEConv(n_hidden, n_hidden, aggregator_type, use_cache_sample=use_cache_sample))
+            self.layers.append(SAGEConv(n_hidden, n_hidden, aggregator_type, 
+                kernel=kernel, S=S))
+                #use_cache_sample=use_cache_sample))
         # output layer
-        self.layers.append(SAGEConv(n_hidden, n_classes, aggregator_type, use_cache_sample=use_cache_sample)) # activation None
+        self.layers.append(SAGEConv(n_hidden, n_classes, aggregator_type, 
+            kernel=kernel, S=S))
+            # use_cache_sample=use_cache_sample)) # activation None
 
     def forward(self, graph, inputs):
         h = self.dropout(inputs)
@@ -125,7 +134,9 @@ def main(args, n_running, name_base):
                       F.relu,
                       args.dropout,
                       args.aggregator_type,
-                      args.cache_sample)
+                      args.kernel,
+                      args.S)
+                      # args.cache_sample)
 
     if cuda:
         model.cuda()
@@ -136,31 +147,51 @@ def main(args, n_running, name_base):
         acc = evaluate(model, g, features, labels, test_nid)
         print("Test accuracy {:.3%}".format(acc))  
 
-        num_run = 10
+        warm_up = 0
+        num_run = 100
         times = []
-        import torch.autograd.profiler as profiler
-        with profiler.profile(use_cuda=True) as prof:
-            for i in range(num_run):
-                t = inference(model, g, features)
-                times.append(t)
-                print("Inference time: {:.3f}".format(t))
-        print("Average inference time: {:.3f}".format(
-            np.mean(times[3:])*1000))
-        avg_t = np.mean(times[3:])*1000
-        print("Average inference time: {:.3f}".format(avg_t))
+
+        for i in range(warm_up):
+            inference(model, g, features)
+
+        # with profiler.profile(use_cuda=True) as prof:
+        #     for i in range(num_run):
+        #         t = inference(model, g, features)
+        #         times.append(t)
+        #         # print("Inference time: {:.3f}".format(t))
+        # # print("Average inference time: {:.3f}".format(np.mean(times[3:])*1000))
+        # avg_t = np.mean(times[3:])*1000
+        # print("Average inference time: {:.3f}".format(avg_t))
 
         # print(prof.key_averages().table(sort_by="cuda_time_total"))
-        events = prof.key_averages()
-        for evt in events:
-            if evt.key == "GSpMM":
-                # print(evt.self_cuda_time_total_str)
-                avg_spmm_t = evt.cuda_time*evt.count/num_run/1000
-        print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
+        # events = prof.key_averages()
+        # for evt in events:
+        #     if evt.key == "GSpMM":
+        #         # print(evt.self_cuda_time_total_str)
+        #         avg_spmm_t = evt.cuda_time*evt.count/num_run/1000
+        # print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
+
+        spmm_t_arr = []
+        for i in range(num_run):
+            with profiler.profile(use_cuda=True) as prof:
+                t = inference(model, g, features)
+                times.append(t)
+
+            events = prof.key_averages()
+            for evt in events:
+                if evt.key == "GSpMM": 
+                    spmm_t = evt.cuda_time*evt.count/1000 
+                    spmm_t_arr.append(spmm_t)
+
+        print("Average inference time: {:.3f}".format(np.mean(times[3:])*1000))
+        avg_spmm_t = np.mean(spmm_t_arr)
+        std_spmm_t = np.std(spmm_t_arr)
+        print("GSpMM CUDA kernel, Avg Time: {:.3f} (ms), Std: {:.3f}".format(avg_spmm_t, std_spmm_t))
 
         if args.log != "none":
             with open("./log/" + args.dataset + "_" + args.log + "_log.csv", 'a+') as f:
-                if args.cache_sample:
-                    S = dgl_pytorch_sp.S
+                if args.kernel == "CacheSample":
+                    S = args.S
                 else:
                     S = 0
                 string = "S, {}, ".format(S)
@@ -236,8 +267,12 @@ if __name__ == '__main__':
             help="perform training")
     parser.add_argument("--inference", action='store_true',
             help="perform inference")
-    parser.add_argument("--cache-sample", action='store_true',
-            help="Use CacheSample kernel")
+    parser.add_argument("--kernel", type=str, default="cuSPARSE",
+            help="Define kernel from cuSPARSE and CacheSample")
+    parser.add_argument("--S", type=int, default=128,
+            help="Define S value for CacheSample kernel")
+    # parser.add_argument("--cache-sample", action='store_true',
+    #         help="Use CacheSample kernel")
     parser.add_argument("--save-model", action='store_true',
             help="whether to save model")
     parser.add_argument("--log", type=str, default="none",

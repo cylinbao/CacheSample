@@ -2,11 +2,11 @@
 # python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --train --save-model
 
 # inference command for cusparse
-python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference # --log=simrand
+python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference --kernel=cuSPARSE # --log=simrand
 return
 
 # inference command for cache sample
-# python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference --log=simrand --cache-sample
+python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference --kernel=CacheSample --S=512 # --log=simrand 
 
 run_cmd () {
     python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference --log=$1 --cache-sample 

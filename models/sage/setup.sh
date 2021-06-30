@@ -41,13 +41,13 @@ if [ $? -eq 1 ]; then
 fi
 
 # check modification on sparse.py file
-cmp -s ./sparse.py $DGL_DIR/python/dgl/backend/pytorch/sparse.py
-if [ $? -eq 1 ]; then
-    echo "Copy ./sparse.py to $DGL_DIR/python/dgl/backend/pytorch/"
-    cp ./sparse.py $DGL_DIR/python/dgl/backend/pytorch/
-else
-    echo "No changes in sparse.py"
-fi
+# cmp -s ./sparse.py $DGL_DIR/python/dgl/backend/pytorch/sparse.py
+# if [ $? -eq 1 ]; then
+#     echo "Copy ./sparse.py to $DGL_DIR/python/dgl/backend/pytorch/"
+#     cp ./sparse.py $DGL_DIR/python/dgl/backend/pytorch/
+# else
+#     echo "No changes in sparse.py"
+# fi
 
 # install dgl python package
 echo "Install DGL python"

@@ -2,11 +2,11 @@
 # python train_full.py --gpu=0 --dataset=reddit --n-hidden=16 --aggregator-type=mean --train --save-model
 
 # inference command for cusparse
-python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference # --log=simrand
+python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --kernel=cuSPARSE # --log=simrand
 return
 
 # inference command for cache sample
-python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --cache-sample # --log=simrand
+python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --kernel=CacheSample --S=256 # --log=simrand
 
 run_cmd () {
     python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --cache-sample --log=$1 

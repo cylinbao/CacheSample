@@ -6,7 +6,7 @@
 // #define KERNEL_TIME
 // #define KERNEL_INFO
 // #define CALL_FUNC
-#define USE_CACHE_SAMPLE
+// #define USE_CACHE_SAMPLE
 
 #include <dgl/array.h>
 #include "./spmm.cuh"
@@ -702,6 +702,7 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
              NDArray efeat,
              NDArray out,
              std::vector<NDArray> out_aux,
+             const std::string& kernel,
              const int S) {
 #ifdef CALL_FUNC
   LOG(INFO) << "calling SpMMCsr()";
@@ -728,31 +729,24 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
       for (int i = 1; i < ufeat->ndim; ++i)
         x_length *= ufeat->shape[i];
       // SWITCH between cusparse and cache_sample kernel
-#ifdef USE_CACHE_SAMPLE
-      cusparse::CacheSampleCsrmm<IdType, DType>(
-          ufeat->ctx, csr,
-          static_cast<DType*>(ufeat->data),
-          static_cast<DType*>(out->data),
-          x_length, S);
-// #endif
-/*
-#ifdef USE_GE_SPMM
-      GeSpmmCsrmm<IdType, DType>(
-          ufeat->ctx, csr,
-          static_cast<DType*>(ufeat->data),
-          static_cast<DType*>(out->data),
-          x_length);
-#endif
-*/
-// #ifdef USE_CUSPARSE
-#else
-      cusparse::CusparseCsrmm2<IdType, DType>(
-          ufeat->ctx, csr,
-          static_cast<DType*>(ufeat->data),
-          nullptr,
-          static_cast<DType*>(out->data),
-          x_length);
-#endif
+      if (kernel == "cuSPARSE") {
+        cusparse::CusparseCsrmm2<IdType, DType>(
+            ufeat->ctx, csr,
+            static_cast<DType*>(ufeat->data),
+            nullptr,
+            static_cast<DType*>(out->data),
+            x_length);
+      }
+      else if (kernel == "CacheSample") {
+        cusparse::CacheSampleCsrmm<IdType, DType>(
+            ufeat->ctx, csr,
+            static_cast<DType*>(ufeat->data),
+            static_cast<DType*>(out->data),
+            x_length, S);
+      }
+      else {
+        LOG(FATAL) << "Unsupported kernel: " << kernel;
+      }
     } else if (sizeof(IdType) == 4 && op == "mul" && efeat.NumElements() == csr.indices->shape[0]) {
 #ifdef CALL_FUNC
       LOG(INFO) << "op == mul";
@@ -762,21 +756,26 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
         x_length *= ufeat->shape[i];
       if (!IsNullArray(csr.data))
         efeat = IndexSelect(efeat, csr.data);
-#ifdef USE_CACHE_SAMPLE
-      cusparse::CacheSampleCsrmmMul(
-          ufeat->ctx, csr,
-          static_cast<DType*>(ufeat->data),
-          static_cast<DType*>(efeat->data),
-          static_cast<DType*>(out->data),
-          x_length, S);
-#else
-      cusparse::CusparseCsrmm2<DType>(
+
+      if (kernel == "cuSPARSE") {
+        cusparse::CusparseCsrmm2<DType>(
           ufeat->ctx, csr,
           static_cast<DType*>(ufeat->data),
           static_cast<DType*>(efeat->data),
           static_cast<DType*>(out->data),
           x_length);
-#endif
+      }
+      else if (kernel == "CacheSample") {
+        cusparse::CacheSampleCsrmmMul(
+          ufeat->ctx, csr,
+          static_cast<DType*>(ufeat->data),
+          static_cast<DType*>(efeat->data),
+          static_cast<DType*>(out->data),
+          x_length, S);
+      }
+      else {
+        LOG(FATAL) << "Unsupported kernel: " << kernel;
+      }
     } else {
 #ifdef CALL_FUNC
       LOG(INFO) << "op == " << op;
@@ -860,22 +859,26 @@ template void SpMMCsr<kDLGPU, int32_t, float>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const int);
+    const std::string& kernel, const int S);
+    // const int);
 template void SpMMCsr<kDLGPU, int64_t, float>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const int);
+    const std::string& kernel, const int S);
+    // const int);
 template void SpMMCsr<kDLGPU, int32_t, double>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const int);
+    const std::string& kernel, const int S);
+    // const int);
 template void SpMMCsr<kDLGPU, int64_t, double>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const int);
+    const std::string& kernel, const int S);
+    // const int);
 
 template void SpMMCoo<kDLGPU, int32_t, float>(
     const std::string& op, const std::string& reduce,

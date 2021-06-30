@@ -455,6 +455,9 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
             static_cast<DType*>(out->data),
             x_length, S);
       }
+      else {
+        LOG(FATAL) << "Unsupported Kernel: " << kernel;
+      }
     } else if (sizeof(IdType) == 4 && op == "mul" && efeat.NumElements() == csr.indices->shape[0]) {
 #ifdef CALL_FUNC
       LOG(INFO) << "op == mul";
@@ -464,21 +467,26 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
         x_length *= ufeat->shape[i];
       if (!IsNullArray(csr.data))
         efeat = IndexSelect(efeat, csr.data);
-#ifdef USE_CACHE_SAMPLE
-      cusparse::CacheSampleCsrmmMul(
-          ufeat->ctx, csr,
-          static_cast<DType*>(ufeat->data),
-          static_cast<DType*>(efeat->data),
-          static_cast<DType*>(out->data),
-          x_length, S);
-#else
-      cusparse::CusparseCsrmm2<DType>(
+
+      if (kernel == "cuSPARSE") {
+        cusparse::CusparseCsrmm2<DType>(
           ufeat->ctx, csr,
           static_cast<DType*>(ufeat->data),
           static_cast<DType*>(efeat->data),
           static_cast<DType*>(out->data),
           x_length);
-#endif
+      }
+      else if (kernel == "CacheSample") {
+        cusparse::CacheSampleCsrmmMul(
+          ufeat->ctx, csr,
+          static_cast<DType*>(ufeat->data),
+          static_cast<DType*>(efeat->data),
+          static_cast<DType*>(out->data),
+          x_length, S);
+      }
+      else {
+        LOG(FATAL) << "Unsupported Kernel: " << kernel;
+      }
     } else {
 #ifdef CALL_FUNC
       LOG(INFO) << "op == " << op;
