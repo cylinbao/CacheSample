@@ -8,7 +8,9 @@ python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop
 return
 
 # inference commend, use --norm=none for cache_sample kernel
-python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --inference --kernel=CacheSample --S=128 # --log=simrand
+# python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --inference --kernel=CacheSample --S=512 # --log=simrand
+
+# python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --inference --kernel=Sample --S=512 # --log=simrand
 
 run_cmd () {
     python train.py --gpu=0 --dataset=reddit --n-hidden=128 --n-layers=1 --self-loop --inference --cache-sample --log=$1

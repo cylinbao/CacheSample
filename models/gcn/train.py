@@ -90,10 +90,10 @@ def run(args, n_run, name_base):
     #     kernel = "cuSPARSE"
     #     norm = 'right'
 
-    if args.kernel == "CacheSample":
-        norm = 'none'
-    else:
+    if args.kernel == "cuSPARSE":
         norm = 'right'
+    else:
+        norm = 'none'
 
     # create GCN model
     model = GCN(in_feats,

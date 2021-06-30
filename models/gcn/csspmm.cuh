@@ -125,20 +125,6 @@ __global__ void SampleSpMM_FastRand(
     else
       norm = float(s);
 
-    /*if (nnz < s) {
-      for (int ss = threadIdx.x; (lb+ss) < hb; ss+=blockDim.x)
-        sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
-    }
-    else {
-      for (int ss = threadIdx.x; ss < s; ss+=blockDim.x) {
-        // offset = lb + ((ss*577) % nnz);
-        offset = lb + ((ss*p) % nnz);
-        sh[(sm_offset + ss)] = A_indices[offset]*k;
-      }
-    }
-    __syncthreads();
-    */
-
     if (cid < k) {
       for (int kk = 0; kk < s && (lb+kk) < hb; kk++) {
         if (nnz < s) {
@@ -148,8 +134,7 @@ __global__ void SampleSpMM_FastRand(
           offset = lb + ((kk*p) % nnz);
           offset = A_indices[offset]*k + cid;
         }
-        // offset = A_indices[(lb + kk)]*k + cid;
-        // offset = sh[(sm_offset+kk)] + cid;
+        / offset = sh[(sm_offset+kk)] + cid;
         acc += B[offset];
       }
       offset = rid*k + cid;
