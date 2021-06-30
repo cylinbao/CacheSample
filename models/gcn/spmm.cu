@@ -304,6 +304,58 @@ void CacheSampleCsrmm(
     grid, block, shmem);
 }
 
+template <typename IdType, typename DType>
+void SampleCsrmm(
+    const DLContext& ctx,
+    const aten::CSRMatrix& csr,
+    const DType* B_data, //const DType* A_data,
+    DType* C_data,
+    int x_length, 
+    const int S) {
+  const int M = csr.num_rows;
+  const int N = x_length;
+
+  int DIM_X;
+  int DIM_Y;
+  if (N <= 32) {
+    DIM_X = 32;
+    DIM_Y = 4;
+  }
+  else if (N <= 128) {
+    DIM_X = N;
+    DIM_Y = 512/DIM_X;
+  }
+  else {
+    DIM_X = 128;
+    DIM_Y = 4;
+  }
+
+  int tile_k = (N+DIM_X-1)/DIM_X;
+  int n_block = (M+DIM_Y-1)/DIM_Y;
+
+  dim3 grid  = dim3(n_block, tile_k, 1);
+  dim3 block = dim3(DIM_X, DIM_Y, 1);
+  int shmem = (S*DIM_Y*sizeof(int));
+
+  srand (time(NULL));
+  int primes[10] = {577, 769, 983, 1193, 1429,
+                    1619, 1871, 2089, 2339, 2579};
+  int p_idx = rand() % 10;
+  int P = primes[p_idx];
+
+#ifdef KERNEL_INFO
+  char kernel_name[] = "SampleCsrmm()";
+  printKernelInfo(kernel_name, grid, block, shmem, M, N, S, P);
+#endif
+
+  XSampleCsrmm<IdType, DType>(
+    M, N, S, P,
+    static_cast<IdType*>(csr.indptr->data),
+    static_cast<IdType*>(csr.indices->data),
+    B_data, C_data,
+    grid, block, shmem);
+}
+
 template <typename DType>
 void CacheSampleCsrmmMul(
     const DLContext& ctx,
@@ -450,6 +502,13 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
       }
       else if (kernel == "CacheSample") {
         cusparse::CacheSampleCsrmm<IdType, DType>(
+            ufeat->ctx, csr,
+            static_cast<DType*>(ufeat->data),
+            static_cast<DType*>(out->data),
+            x_length, S);
+      }
+      else if (kernel == "Sample") {
+        cusparse::SampleCsrmm<IdType, DType>(
             ufeat->ctx, csr,
             static_cast<DType*>(ufeat->data),
             static_cast<DType*>(out->data),
