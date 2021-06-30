@@ -6,7 +6,9 @@ python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=m
 return
 
 # inference command for cache sample
-python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --kernel=CacheSample --S=256 # --log=simrand
+# python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --kernel=CacheSample --S=256 # --log=simrand
+
+python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --kernel=Sample --S=256 # --log=simrand
 
 run_cmd () {
     python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --cache-sample --log=$1 

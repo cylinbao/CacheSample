@@ -242,302 +242,7 @@ void CusparseCsrmm2(
       C_data, n));
   device->FreeWorkspace(ctx, trans_out);
 }
-/*
-__device__ __forceinline__ float sum_reduce(float acc, float x) {
-  return acc + x;
-}
 
-__device__ __forceinline__ float sum_init() {
-  return 0.0;
-}
-
-// Idtype = int32_t
-template<typename IdType>
-__global__ void CacheSampleSpMM_Bucket(
-  const int m, const int k, const int s,
-  const IdType* A_indptr, const IdType* A_indices,
-  const float* B, float* C)
-{
-  extern __shared__ int sh[];
-  int sm_offset = threadIdx.y*s;
-
-  int cid = blockIdx.y*blockDim.x + threadIdx.x;
-  int rid = blockIdx.x*blockDim.y + threadIdx.y;
-
-  if (rid < m) {
-    int lb = A_indptr[rid];
-    int hb = A_indptr[(rid+1)];
-    int offset;
-    float acc1 = sum_init();
-    int nnz = hb - lb;
-    float norm = 0.0;
-
-    if (nnz < s)
-      norm = 1/float(nnz);
-    else
-      norm = 1/float(s);
-
-    for (int ss = threadIdx.x; ss < s && (lb+ss) < hb; ss+=blockDim.x) {
-      sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
-    }
-    __syncthreads();
-
-    if (cid < k) {
-      for (int kk = 0; kk < s && (lb+kk) < hb; kk++) {
-        offset = sh[(sm_offset+kk)] + cid;
-        acc1 = sum_reduce(acc1, B[offset]);
-      }
-      offset = rid*k + cid;
-      C[offset] = acc1*norm;
-    }
-  }
-}
-
-// IdType = int32_t
-template<typename IdType>
-__global__ void CacheSampleSpMM_FastRand(
-  const int m, const int k, const int s,
-  const IdType* A_indptr, const IdType* A_indices,
-  const float* B, float* C)
-{
-  extern __shared__ int sh[];
-  int sm_offset = threadIdx.y*s;
-
-  int cid = blockIdx.y*blockDim.x + threadIdx.x;
-  int rid = blockIdx.x*blockDim.y + threadIdx.y;
-
-  if (rid < m) {
-    int lb = A_indptr[rid];
-    int hb = A_indptr[(rid+1)];
-    int offset;
-    float acc1 = sum_init();
-    int nnz = hb - lb;
-    float norm = 0.0;
-
-    if (nnz < s)
-      norm = 1/float(nnz);
-    else
-      norm = 1/float(s);
-
-    if (nnz < s) {
-      for (int ss = threadIdx.x; (lb+ss) < hb; ss+=blockDim.x)
-        sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
-    }
-    else {
-      for (int ss = threadIdx.x; ss < s; ss+=blockDim.x) {
-        offset = lb + ((ss*577) % nnz);
-        sh[(sm_offset + ss)] = A_indices[offset]*k;
-      }
-    }
-    __syncthreads();
-
-    if (cid < k) {
-      for (int kk = 0; kk < s && (lb+kk) < hb; kk++) {
-        offset = sh[(sm_offset+kk)] + cid;
-        acc1 = sum_reduce(acc1, B[offset]);
-      }
-      offset = rid*k + cid;
-      C[offset] = acc1*norm;
-    }
-  }
-}
-
-// IdType = int32_t
-__global__ void CacheSampleSpMM_Mul_Bucket(
-  const int m, const int k, const int s,
-  const int32_t* A_indptr, const int32_t* A_indices,
-  const float* A_data,
-  const float* B, float* C)
-{
-  extern __shared__ int sh[];
-  int *sh_indices = sh;
-  float *sh_data = (float*)&sh_indices[(s*blockDim.y)];
-  int sm_offset = threadIdx.y*s;
-
-  int cid = blockIdx.y*blockDim.x + threadIdx.x;
-  int rid = blockIdx.x*blockDim.y + threadIdx.y;
-
-  if (rid < m) {
-    int lb = A_indptr[rid];
-    int hb = A_indptr[(rid+1)];
-    int offset;
-    float acc1 = sum_init();
-
-    for (int ss = threadIdx.x; ss < s && (lb+ss) < hb; ss+=blockDim.x) {
-      sh[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
-      sh_data[(sm_offset + ss)] = A_data[(lb + ss)];
-    }
-    __syncthreads();
-
-    if (cid < k) {
-      for (int kk = 0; kk < s && (lb+kk) < hb; kk++) {
-        offset = sh_indices[(sm_offset+kk)] + cid;
-        acc1 = sum_reduce(acc1, sh_data[sm_offset+kk]*B[offset]);
-      }
-      offset = rid*k + cid;
-      C[offset] = acc1;
-    }
-  }
-}
-
-// IdType = int32_t
-__global__ void CacheSampleSpMM_Mul_FastRand(
-  const int m, const int k, const int s,
-  const int32_t* A_indptr, const int32_t* A_indices,
-  const float* A_data,
-  const float* B, float* C)
-{
-  extern __shared__ int sh[];
-  int *sh_indices = sh;
-  float *sh_data = (float*)&sh_indices[(s*blockDim.y)];
-  int sm_offset = threadIdx.y*s;
-
-  int cid = blockIdx.y*blockDim.x + threadIdx.x;
-  int rid = blockIdx.x*blockDim.y + threadIdx.y;
-
-  if (rid < m) {
-    int lb = A_indptr[rid];
-    int hb = A_indptr[(rid+1)];
-    int nnz = hb - lb;
-    int offset;
-    float acc1 = sum_init();
-
-    if (nnz < s) {
-      for (int ss = threadIdx.x; (lb+ss) < hb; ss+=blockDim.x) {
-        sh_indices[(sm_offset + ss)] = A_indices[(lb + ss)]*k;
-        sh_data[(sm_offset + ss)] = A_data[(lb + ss)];
-      }
-    }
-    else {
-      for (int ss = threadIdx.x; ss < s; ss+=blockDim.x) {
-        offset = lb + ((ss*577) % nnz);
-        sh_indices[(sm_offset + ss)] = A_indices[offset]*k;
-        sh_data[(sm_offset + ss)] = A_data[offset];
-      }
-    }
-    __syncthreads();
-
-    if (cid < k) {
-      for (int kk = 0; kk < s && (lb+kk) < hb; kk++) {
-        offset = sh_indices[(sm_offset+kk)] + cid;
-        acc1 = sum_reduce(acc1, sh_data[sm_offset+kk]*B[offset]);
-      }
-      offset = rid*k + cid;
-      C[offset] = acc1;
-    }
-  }
-}
-
-template <typename IdType, typename DType>
-void XCacheSampleCsrmm(
-  int m, int n, int s,
-  const IdType* A_indptr,
-  const IdType* A_indices,
-  const DType* B_data, DType* C_data,
-  dim3 grid, dim3 block,
-  int shmem) {
-  LOG(FATAL) << "Not supported yet";
-}
-
-template <>
-void XCacheSampleCsrmm<int32_t, float>(
-  int m, int n, int s,
-  const int32_t* A_indptr,
-  const int32_t* A_indices,
-  const float* B_data, float* C_data,
-  dim3 grid, dim3 block,
-  int shmem) {
-  
-  auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
-#ifdef USE_FASTRAND
-  CUDA_KERNEL_CALL(CacheSampleSpMM_FastRand<int32_t>, 
-    grid, block, shmem, 
-    thr_entry->stream, 
-    m, n, s,
-    A_indptr,
-    A_indices,
-    B_data, C_data);
-#endif
-#ifdef USE_BUCKET
-  CUDA_KERNEL_CALL(CacheSampleSpMM_Bucket<int32_t>, 
-    grid, block, shmem, thr_entry->stream, 
-    m, n, s,
-    A_indptr,
-    A_indices,
-    B_data, C_data);
-#endif
-  cudaStreamSynchronize(thr_entry->stream);
-}
-
-template <>
-void XCacheSampleCsrmm<int64_t, float>(
-  int m, int n, int s,
-  const int64_t* A_indptr,
-  const int64_t* A_indices,
-  const float* B_data, float* C_data,
-  dim3 grid, dim3 block,
-  int shmem) {
-
-  auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
-#ifdef USE_FASTRAND
-  CUDA_KERNEL_CALL(CacheSampleSpMM_FastRand<int64_t>, 
-    grid, block, shmem,
-    thr_entry->stream, 
-    m, n, s,
-    A_indptr,
-    A_indices,
-    B_data, C_data);
-#endif
-#ifdef USE_BUCKET
-  CUDA_KERNEL_CALL(CacheSampleSpMM_Bucket<int64_t>, 
-    grid, block, shmem, thr_entry->stream, 
-    m, n, s,
-    A_indptr,
-    A_indices,
-    B_data, C_data);
-#endif
-  cudaStreamSynchronize(thr_entry->stream);
-}
-
-template <typename DType>
-void XCacheSampleCsrmmMul(
-  int m, int n, int s,
-  const int32_t* A_indptr,
-  const int32_t* A_indices,
-  const DType* A_data,
-  const DType* B_data, DType* C_data,
-  dim3 grid, dim3 block,
-  int shmem) {
-  LOG(FATAL) << "Not supported yet";
-}
-
-template <>
-void XCacheSampleCsrmmMul<float>(
-  int m, int n, int s,
-  const int32_t* A_indptr,
-  const int32_t* A_indices,
-  const float* A_data,
-  const float* B_data, float* C_data,
-  dim3 grid, dim3 block,
-  int shmem) {
-  auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
-#ifdef USE_FASTRAND
-  CUDA_KERNEL_CALL(CacheSampleSpMM_Mul_FastRand, 
-    grid, block, shmem*2, thr_entry->stream, 
-    m, n, s,
-    A_indptr, A_indices, A_data,
-    B_data, C_data);
-#endif
-#ifdef USE_BUCKET
-  CUDA_KERNEL_CALL(CacheSampleSpMM_Mul_Bucket, 
-    grid, block, shmem*2, thr_entry->stream, 
-    m, n, s,
-    A_indptr, A_indices, A_data,
-    B_data, C_data);
-#endif
-  cudaStreamSynchronize(thr_entry->stream);
-}
-*/
 void printKernelInfo(char name[], dim3 grid, dim3 blk, int shmem, 
         int m, int n, int s) {
   std::cout << name << "<<<(" << grid.x << ", " << grid.y << ", " << grid.z
@@ -587,6 +292,58 @@ void CacheSampleCsrmm(
 
   XCacheSampleCsrmm<IdType, DType>(
     M, N, S,
+    static_cast<IdType*>(csr.indptr->data),
+    static_cast<IdType*>(csr.indices->data),
+    B_data, C_data,
+    grid, block, shmem);
+}
+
+template <typename IdType, typename DType>
+void SampleCsrmm(
+    const DLContext& ctx,
+    const aten::CSRMatrix& csr,
+    const DType* B_data, //const DType* A_data,
+    DType* C_data,
+    int x_length, 
+    const int S) {
+  const int M = csr.num_rows;
+  const int N = x_length;
+
+  int DIM_X;
+  int DIM_Y;
+  if (N <= 32) {
+    DIM_X = 32;
+    DIM_Y = 4;
+  }
+  else if (N <= 128) {
+    DIM_X = N;
+    DIM_Y = 512/DIM_X;
+  }
+  else {
+    DIM_X = 128;
+    DIM_Y = 4;
+  }
+
+  int tile_k = (N+DIM_X-1)/DIM_X;
+  int n_block = (M+DIM_Y-1)/DIM_Y;
+
+  dim3 grid  = dim3(n_block, tile_k, 1);
+  dim3 block = dim3(DIM_X, DIM_Y, 1);
+  int shmem = (S*DIM_Y*sizeof(int));
+
+  srand (time(NULL));
+  int primes[10] = {577, 769, 983, 1193, 1429,
+                    1619, 1871, 2089, 2339, 2579};
+  int p_idx = rand() % 10;
+  int P = primes[p_idx];
+
+#ifdef KERNEL_INFO
+  char kernel_name[] = "SampleCsrmm()";
+  printKernelInfo(kernel_name, grid, block, shmem, M, N, S, P);
+#endif
+
+  XSampleCsrmm<IdType, DType>(
+    M, N, S, P,
     static_cast<IdType*>(csr.indptr->data),
     static_cast<IdType*>(csr.indices->data),
     B_data, C_data,
@@ -739,6 +496,13 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
       }
       else if (kernel == "CacheSample") {
         cusparse::CacheSampleCsrmm<IdType, DType>(
+            ufeat->ctx, csr,
+            static_cast<DType*>(ufeat->data),
+            static_cast<DType*>(out->data),
+            x_length, S);
+      }
+      else if (kernel == "Sample") {
+        cusparse::SampleCsrmm<IdType, DType>(
             ufeat->ctx, csr,
             static_cast<DType*>(ufeat->data),
             static_cast<DType*>(out->data),
