@@ -148,7 +148,7 @@ def main(args, n_running, name_base):
         print("Test accuracy {:.3%}".format(acc))  
 
         warm_up = 0
-        num_run = 100
+        num_run = 1000
         times = []
 
         for i in range(warm_up):
