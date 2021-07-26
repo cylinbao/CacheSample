@@ -1,6 +1,6 @@
 [submodule "dgl"]
 	path = dgl
-	url = git@github.com:uwsampl/dgl.git
+	url = git@github.com:cylinbao/dgl.git
 	branch = cache_sample
 [submodule "spmm_test/merge-spmm"]
 	path = spmm_test/merge-spmm
@@ -8,3 +8,4 @@
 [submodule "spmm_test/ge-spmm"]
 	path = spmm_test/ge-spmm
 	url = https://github.com/cylinbao/ge-spmm.git
+	branch = cache_sample
