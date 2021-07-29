@@ -134,7 +134,7 @@ __global__ void SampleSpMM_FastRand(
           offset = lb + ((kk*p) % nnz);
           offset = A_indices[offset]*k + cid;
         }
-        / offset = sh[(sm_offset+kk)] + cid;
+        // offset = sh[(sm_offset+kk)] + cid;
         acc += B[offset];
       }
       offset = rid*k + cid;
