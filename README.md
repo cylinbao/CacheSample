@@ -1,9 +1,10 @@
-# gnn_benchmark
+# CacheSample
+Highly experimental. Check back later!
 
 ## Setup
 Clone the project with `--recurse-submodules`
 ```
-git clone --recurse-submodules https://github.com/uwsampl/gnn_benchmark.git
+git clone --recurse-submodules https://github.com/cylinbao/CacheSample.git
 ```
 If you already clone the project, update the submodules with
 ```
