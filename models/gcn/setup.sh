@@ -1,8 +1,7 @@
 #!/bin/zsh
 
 # Set your DGL root directory here
-REPO_ROOT="$HOME/gnn_benchmark"
-DGL_DIR="$REPO_ROOT/dgl"
+DGL_DIR="$CACHE_SAMPLE_DIR/dgl"
 
 # check modification on spmm.cu file
 cmp -s ./spmm.cu $DGL_DIR/src/array/cuda/spmm.cu
@@ -26,13 +25,13 @@ CUR_DIR=$(pwd)
 # check if build dir exist, if not create one and cmake
 echo "Compile DGL source"
 if [ -d "$DGL_DIR/build" ]; then
-    make -C $DGL_DIR/build
+    make -C $DGL_DIR/build -j16
 else
     mkdir $DGL_DIR/build
     cd $DGL_DIR/build
     cmake -DUSE_CUDA=ON .. 
     cd $CUD_DIR
-    make -C $DGL_DIR/build -j8
+    make -C $DGL_DIR/build -j4
 fi
 
 if [ $? -eq 1 ]; then

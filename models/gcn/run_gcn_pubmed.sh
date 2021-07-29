@@ -1,8 +1,12 @@
 # training commend, modify parameters for your need
-# python train.py --gpu=0 --dataset=pubmed --n-hidden=32 --n-layers=1 --self-loop --n-runs=10 --train --save-model
+python train.py --gpu=0 --dataset=pubmed --n-hidden=128 --n-layers=3 --self-loop --train --n-runs=10 --kernel=cuSPARSE --save-model
 
 # inference commend, for the original kernel
-python train.py --gpu=0 --dataset=pubmed --n-hidden=32 --n-layers=1 --self-loop --inference # --log=cusparse
+# python train.py --gpu=0 --dataset=pubmed --n-hidden=128 --n-layers=3 --self-loop --inference --kernel=cuSPARSE # --log=cusparse
+
+# python train.py --gpu=0 --dataset=pubmed --n-hidden=128 --n-layers=3 --self-loop --train --n-runs=2 --kernel=CacheSample --S=32 --save-model
+
+# python train.py --gpu=1 --dataset=pubmed --n-hidden=128 --n-layers=3 --self-loop --inference --kernel=CacheSample --S=32 # --log=cusparse
 return
 
 # python train.py --gpu=0 --dataset=pubmed --n-hidden=32 --n-layers=1 --self-loop --inference --log=simrand

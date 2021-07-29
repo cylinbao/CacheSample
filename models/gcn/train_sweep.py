@@ -194,6 +194,43 @@ def run(args, n_run, name_base):
 
     return test_acc, epoch_t
 
+def main(args):
+    name_base = "gcn_{}_{}_layer_{}_hidden".format(
+                 args.dataset, args.n_layers, args.n_hidden)
+
+    test_accs = []
+    epoch_times = []
+    if args.train:
+        for i in range(args.n_runs):
+            test_acc, epoch_t = run(args, i, name_base)
+            test_accs.append(test_acc)
+            epoch_times.append(epoch_t)
+
+        if args.save_model:
+            best_idx = np.argmax(test_accs)
+            print("best_idx: ", best_idx)
+            model_name = name_base 
+            cmd = "cp {}/{}_{}.pt {}/{}_best.pt".format(args.dir, model_name, best_idx, args.dir, model_name)
+            print(cmd)
+            os.system(cmd)
+            # deleting unwanted models
+            for i in range(args.n_runs):
+                cmd = "rm {}/{}_{}.pt".format(args.dir, model_name, i)
+                print(cmd)
+                os.system(cmd)
+
+        print()
+        print(f"Runned {args.n_runs} times")
+        print(f"Test Accs: {test_accs}")
+        print(f"Best Test Accuracy: {np.max(test_accs):.3%}")
+        print(f"Average Test accuracy: {np.mean(test_accs):.3%} ± {np.std(test_accs):.3%}")
+        print(f"Mean Epoch Time: {np.mean(epoch_times):.3f}")
+
+        return np.max(test_accs), np.mean(epoch_times)
+
+    if args.inference:
+        run(args, 0, name_base)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GCN')
     register_data_args(parser)
@@ -225,8 +262,7 @@ if __name__ == '__main__':
             help="directory to store model's state dict")
     parser.add_argument("--save-model", action='store_true',
             help="whether to save model")
-    parser.add_argument("--log", type=str, default="none",
-            help="filename of log, if none, then no log")
+    parser.add_argument("--log", action='store_true', help="log or not")
     parser.add_argument("--kernel", type=str, default="cuSPARSE",
             help="Define kernel from cuSPARSE and CacheSample")
     parser.add_argument("--S", type=int, default=0,
@@ -238,35 +274,21 @@ if __name__ == '__main__':
     args.dir = args.dir + '/' + args.dataset + '/' + midle_dir 
     print(args)
 
-    name_base = "gcn_{}_{}_layer_{}_hidden".format(
-                 args.dataset, args.n_layers, args.n_hidden)
+    num_layers = [1, 3, 7, 15]
+    num_hidden = [32, 64, 128, 256]
 
-    test_accs = []
-    epoch_times = []
-    if args.train:
-        for i in range(args.n_runs):
-            test_acc, epoch_t = run(args, i, name_base)
-            test_accs.append(test_acc)
-            epoch_times.append(epoch_t)
+    for nlay in num_layers:
+        for nhidden in num_hidden:
+            args.n_layers = nlay 
+            args.n_hidden = nhidden 
 
-        if args.save_model:
-            best_idx = np.argmax(test_accs)
-            print("best_idx: ", best_idx)
-            model_name = name_base 
-            cmd = "cp {}/{}_{}.pt {}/{}_best.pt".format(args.dir, model_name, best_idx, args.dir, model_name)
-            print(cmd)
-            os.system(cmd)
-            for i in range(args.n_runs):
-                cmd = "rm {}/{}_{}.pt".format(args.dir, model_name, i)
-                print(cmd)
-                os.system(cmd)
+            test_acc, epoch_t = main(args)
 
-        print()
-        print(f"Runned {args.n_runs} times")
-        print(f"Test Accs: {test_accs}")
-        print(f"Best Test Accuracy: {np.max(test_accs):.3%}")
-        print(f"Average Test accuracy: {np.mean(test_accs):.3%} ± {np.std(test_accs):.3%}")
-        print(f"Mean Epoch Time: {np.mean(epoch_times):.3f}")
-
-    if args.inference:
-        run(args, 0, name_base)
+            if args.log:
+                with open("./log/{}/gcn_{}_{}_S{}_train_log.csv".format(
+                        args.dataset, args.dataset, args.kernel, args.S), 'a+') as f:
+                    string = "n_layer, {}, ".format(nlay+1)
+                    string += "n_hidden, {}, ".format(nhidden)
+                    string += "acc, {:.3%}, ".format(test_acc)
+                    string += "epoch_t, {:.3f}".format(epoch_t)
+                    f.write(string + "\n")

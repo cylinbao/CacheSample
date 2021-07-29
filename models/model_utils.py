@@ -15,7 +15,7 @@ def save_model(path, model, filename):
         filename))
 
 def load_model(path, model, filename, gpu=0):
-    print("Loading model's state_dict", filename)
+    print("Loading model's state_dict", path + '/' + filename)
     model.load_state_dict(torch.load("./{}/{}".format(path, 
         filename), map_location=f'cuda:{gpu}'))
     return model
