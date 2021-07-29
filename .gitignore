@@ -1,5 +1,7 @@
 *.swp
 *.sd
+*.pt
+*.csv
 __pycache__
 models/ogb/ogb-*/gcn*.json
 models/ogb/ogb-*/sage*.json
