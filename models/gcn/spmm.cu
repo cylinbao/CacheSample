@@ -8,6 +8,7 @@
 // #define CALL_FUNC
 
 #include <dgl/array.h>
+#include <time.h>
 #include "./spmm.cuh"
 #include "./functor.cuh"
 #include "../../runtime/cuda/cuda_common.h"
@@ -259,7 +260,7 @@ void CacheSampleCsrmm(
     const DType* B_data, //const DType* A_data,
     DType* C_data,
     int x_length, 
-    const int S) {
+    const unsigned int S) {
   const int M = csr.num_rows;
   const int N = x_length;
 
@@ -285,11 +286,19 @@ void CacheSampleCsrmm(
   dim3 block = dim3(DIM_X, DIM_Y, 1);
   int shmem = (S*DIM_Y*sizeof(int));
 
+  /*
   srand (time(NULL));
   int primes[10] = {577, 769, 983, 1193, 1429,
                     1619, 1871, 2089, 2339, 2579};
   int p_idx = rand() % 10;
   int P = primes[p_idx];
+  */
+
+  unsigned int P = 21767;
+
+  struct timespec tp;
+  clock_gettime(CLOCK_MONOTONIC, &tp);
+  unsigned int Offset = (unsigned int) tp.tv_nsec;
 
 #ifdef KERNEL_INFO
   char kernel_name[] = "CacheSampleCsrmm()";
@@ -297,7 +306,8 @@ void CacheSampleCsrmm(
 #endif
 
   XCacheSampleCsrmm<IdType, DType>(
-    M, N, S, P,
+    M, N, 
+    S, P, Offset,
     static_cast<IdType*>(csr.indptr->data),
     static_cast<IdType*>(csr.indices->data),
     B_data, C_data,
