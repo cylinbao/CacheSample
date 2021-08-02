@@ -249,34 +249,50 @@ void printKernelInfo(char name[], dim3 grid, dim3 blk, int shmem,
   std::cout << name << "<<<(" << grid.x << ", " << grid.y << ", " << grid.z
             << "), (" << blk.x << ", " << blk.y << ", " << blk.z << "), "
             << shmem << ")>>>";
-  std::cout << " with (m, n, s) = " << "(" << m << ", " << n 
+  std::cout << " with (m, n, s, p) = " << "(" << m << ", " << n 
       << ", " << s << ")" << std::endl;
 }
+
+#define NUM_THREAD 512
 
 template <typename IdType, typename DType>
 void CacheSampleCsrmm(
     const DLContext& ctx,
     const aten::CSRMatrix& csr,
-    const DType* B_data, //const DType* A_data,
+    const DType* B_data, 
     DType* C_data,
     int x_length, 
-    const unsigned int S) {
+    const std::string& Kernel,
+    const int norm_bias,
+    const int S) {
   const int M = csr.num_rows;
   const int N = x_length;
-
   int DIM_X;
   int DIM_Y;
-  if (N <= 32) {
+
+  if (N <= 16) {
+    DIM_X = 16;
+    DIM_Y = 8;
+  }
+  else if (N <= 32) {
     DIM_X = 32;
     DIM_Y = 4;
   }
-  else if (N <= 128) {
-    DIM_X = N;
-    DIM_Y = 512/DIM_X;
+  else if (N <= 64) {
+    DIM_X = 64;
+    DIM_Y = 4;
   }
-  else {
+  else if (N <= 128) {
     DIM_X = 128;
     DIM_Y = 4;
+  }
+  else if (N <= 256) {
+    DIM_X = 256;
+    DIM_Y = 2;
+  }
+  else {
+    DIM_X = 512;
+    DIM_Y = 1;
   }
 
   int tile_k = (N+DIM_X-1)/DIM_X;
@@ -286,28 +302,14 @@ void CacheSampleCsrmm(
   dim3 block = dim3(DIM_X, DIM_Y, 1);
   int shmem = (S*DIM_Y*sizeof(int));
 
-  /*
-  srand (time(NULL));
-  int primes[10] = {577, 769, 983, 1193, 1429,
-                    1619, 1871, 2089, 2339, 2579};
-  int p_idx = rand() % 10;
-  int P = primes[p_idx];
-  */
-
-  unsigned int P = 21767;
-
-  struct timespec tp;
-  clock_gettime(CLOCK_MONOTONIC, &tp);
-  unsigned int Offset = (unsigned int) tp.tv_nsec;
-
 #ifdef KERNEL_INFO
   char kernel_name[] = "CacheSampleCsrmm()";
-  printKernelInfo(kernel_name, grid, block, shmem, M, N, S, P);
+  printKernelInfo(kernel_name, grid, block, shmem, M, N, S);
 #endif
 
   XCacheSampleCsrmm<IdType, DType>(
+    Kernel, norm_bias, S, 
     M, N, 
-    S, P, Offset,
     static_cast<IdType*>(csr.indptr->data),
     static_cast<IdType*>(csr.indices->data),
     B_data, C_data,
@@ -355,7 +357,7 @@ void SampleCsrmm(
 
 #ifdef KERNEL_INFO
   char kernel_name[] = "SampleCsrmm()";
-  printKernelInfo(kernel_name, grid, block, shmem, M, N, S, P);
+  printKernelInfo(kernel_name, grid, block, shmem, M, N, S);
 #endif
 
   XSampleCsrmm<IdType, DType>(
@@ -476,6 +478,7 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
              NDArray out,
              std::vector<NDArray> out_aux,
              const std::string& kernel,
+             const int norm_bias,
              const int S) {
 #ifdef CALL_FUNC
   LOG(INFO) << "calling SpMMCsr()";
@@ -510,19 +513,24 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
             static_cast<DType*>(out->data),
             x_length);
       }
-      else if (kernel == "CacheSample") {
-        cusparse::CacheSampleCsrmm<IdType, DType>(
-            ufeat->ctx, csr,
-            static_cast<DType*>(ufeat->data),
-            static_cast<DType*>(out->data),
-            x_length, S);
-      }
       else if (kernel == "Sample") {
         cusparse::SampleCsrmm<IdType, DType>(
             ufeat->ctx, csr,
             static_cast<DType*>(ufeat->data),
             static_cast<DType*>(out->data),
             x_length, S);
+      }
+      else if (kernel.length() >= 11) {
+        if (kernel.substr(0, 11) == "CacheSample") {
+          cusparse::CacheSampleCsrmm<IdType, DType>(
+            ufeat->ctx, csr,
+            static_cast<DType*>(ufeat->data),
+            static_cast<DType*>(out->data),
+            x_length, kernel, norm_bias, S);
+        }
+        else {
+          LOG(FATAL) << "Unsupported Kernel: " << kernel;
+        }
       }
       else {
         LOG(FATAL) << "Unsupported Kernel: " << kernel;
@@ -639,22 +647,22 @@ template void SpMMCsr<kDLGPU, int32_t, float>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const std::string& kernel, const int S);
+    const std::string& kernel, const int norm_bias, const int S);
 template void SpMMCsr<kDLGPU, int64_t, float>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const std::string& kernel, const int S);
+    const std::string& kernel, const int norm_bias, const int S);
 template void SpMMCsr<kDLGPU, int32_t, double>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const std::string& kernel, const int S);
+    const std::string& kernel, const int norm_bias, const int S);
 template void SpMMCsr<kDLGPU, int64_t, double>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const std::string& kernel, const int S);
+    const std::string& kernel, const int norm_bias, const int S);
 
 template void SpMMCoo<kDLGPU, int32_t, float>(
     const std::string& op, const std::string& reduce,

@@ -15,10 +15,11 @@ from model_utils import save_model, load_model
 
 from gcn import GCN
 
-def evaluate(model, g, features, labels, mask, norm='right', kernel='cuSPARSE', S=0):
+def evaluate(model, g, features, labels, mask, 
+        norm='right', norm_bias=0, kernel='cuSPARSE', S=0):
     model.eval()
     with torch.no_grad():
-        logits = model(g, features, norm, kernel, S)
+        logits = model(g, features, norm, norm_bias, kernel, S)
         logits = logits[mask]
         labels = labels[mask]
         _, indices = torch.max(logits, dim=1)
@@ -26,11 +27,12 @@ def evaluate(model, g, features, labels, mask, norm='right', kernel='cuSPARSE', 
         return correct.item() * 1.0 / len(labels)
 
 # Run forward and return runtime
-def inference(model, g, features, norm='right', kernel='cuSPARSE', S=0):
+def inference(model, g, features, 
+        norm='right', norm_bias=0, kernel='cuSPARSE', S=0):
     model.eval()
     t0 = time.time()
     with torch.no_grad():
-        logits = model(g, features, norm, kernel, S)
+        logits = model(g, features, norm, norm_bias, kernel, S)
     torch.cuda.synchronize()
 
     return time.time() - t0
@@ -101,17 +103,18 @@ def run(args, n_run, name_base):
     if args.inference:
         model_name = name_base + "_best.pt"
         model = load_model(args.dir, model, model_name)
-        # acc = evaluate(model, g, features, labels, test_mask, norm, args.kernel, args.S)
-        acc = evaluate(model, g, features, labels, test_mask, 'right', 'cuSPARSE')
+        acc = evaluate(model, g, features, labels, test_mask, 
+                norm, args.norm_bias, args.kernel, args.S)
+        # acc = evaluate(model, g, features, labels, test_mask, 'right', 0, 'cuSPARSE')
         print("Test accuracy {:.3%}".format(acc))
-        return
 
         num_run = 10
         times = []
 
         with profiler.profile(use_cuda=True) as prof:
             for i in range(num_run):
-                t = inference(model, g, features, norm, args.kernel, args.S)
+                t = inference(model, g, features, norm, args.norm_bias, 
+                        args.kernel, args.S)
                 times.append(t)
                 print("Inference time: {:.3f}".format(t))
         avg_t = np.mean(times[3:])*1000
@@ -158,7 +161,8 @@ def run(args, n_run, name_base):
 
         t0 = time.time()
         # forward
-        logits = model(g, features, norm=norm, kernel=args.kernel, S=args.S)
+        logits = model(g, features, norm=norm, norm_bias=args.norm_bias, 
+                        kernel=args.kernel, S=args.S)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
 
         optimizer.zero_grad()
@@ -168,7 +172,7 @@ def run(args, n_run, name_base):
         # if epoch >= 3:
         dur.append(time.time() - t0)
 
-        val_acc = evaluate(model, g, features, labels, val_mask, 'right', 'cuSPARSE')
+        val_acc = evaluate(model, g, features, labels, val_mask, 'right', 0, 'cuSPARSE')
         print("Epoch {:05d} | Time(ms) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
               "ETputs(KTEPS) {:.2f}". format(epoch, dur[-1]*1000, loss.item(),
                 val_acc, n_edges / dur[-1] / 1000))
@@ -185,7 +189,7 @@ def run(args, n_run, name_base):
     print()
     print("Mean epoch time (ms): {:.3f}".format(epoch_t))
     # acc = evaluate(model, g, features, labels, test_mask)
-    test_acc = evaluate(model, g, features, labels, test_mask, 'right', 'cuSPARSE')
+    test_acc = evaluate(model, g, features, labels, test_mask, 'right', 0, 'cuSPARSE')
     print("Test accuracy {:.2%}".format(test_acc))
 
     if args.save_model:
@@ -229,12 +233,15 @@ if __name__ == '__main__':
             help="filename of log, if none, then no log")
     parser.add_argument("--kernel", type=str, default="cuSPARSE",
             help="Define kernel from cuSPARSE and CacheSample")
+    parser.add_argument("--norm-bias", type=int, default=0,
+            help="Define norm bias for CacheSample kernel")
     parser.add_argument("--S", type=int, default=0,
             help="Define S value for CacheSample kernel")
     parser.set_defaults(self_loop=False)
     args = parser.parse_args()
 
-    midle_dir = "{}_S{}".format(args.kernel, args.S)
+    # midle_dir = "{}_S{}".format(args.kernel, args.S)
+    midle_dir = "cuSPARSE_S0"
     args.dir = args.dir + '/' + args.dataset + '/' + midle_dir 
     print(args)
 
