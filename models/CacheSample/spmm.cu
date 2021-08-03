@@ -244,16 +244,14 @@ void CusparseCsrmm2(
 }
 
 
-void printKernelInfo(char name[], dim3 grid, dim3 blk, int shmem, 
+void printKernelInfo(std::string name, dim3 grid, dim3 blk, int shmem, 
         int m, int n, int s) {
   std::cout << name << "<<<(" << grid.x << ", " << grid.y << ", " << grid.z
             << "), (" << blk.x << ", " << blk.y << ", " << blk.z << "), "
             << shmem << ")>>>";
-  std::cout << " with (m, n, s, p) = " << "(" << m << ", " << n 
+  std::cout << " with (m, n, s) = " << "(" << m << ", " << n 
       << ", " << s << ")" << std::endl;
 }
-
-#define NUM_THREAD 512
 
 template <typename IdType, typename DType>
 void CacheSampleCsrmm(
@@ -262,53 +260,63 @@ void CacheSampleCsrmm(
     const DType* B_data, 
     DType* C_data,
     int x_length, 
-    const std::string& Kernel,
+    const std::string& kernel,
     const int norm_bias,
     const int S) {
   const int M = csr.num_rows;
   const int N = x_length;
   int DIM_X;
   int DIM_Y;
+  int shmem;
 
-  if (N <= 16) {
-    DIM_X = 16;
-    DIM_Y = 8;
-  }
-  else if (N <= 32) {
+  // DIM_X = 128;
+  // DIM_Y = 4;
+
+  // /*
+  // if (N <= 16) {
+  //   DIM_X = 16;
+  //   DIM_Y = 8;
+  // }
+  if (N <= 32) {
     DIM_X = 32;
     DIM_Y = 4;
   }
-  else if (N <= 64) {
-    DIM_X = 64;
-    DIM_Y = 4;
-  }
+  // else if (N <= 64) {
+  //   DIM_X = 64;
+  //   DIM_Y = 4;
+  // }
   else if (N <= 128) {
     DIM_X = 128;
     DIM_Y = 4;
   }
-  else if (N <= 256) {
+  // else if (N <= 256) {
+  //   DIM_X = 256;
+  //   DIM_Y = 2;
+  // }
+  else {
     DIM_X = 256;
     DIM_Y = 2;
   }
-  else {
-    DIM_X = 512;
-    DIM_Y = 1;
-  }
+  // */
 
   int tile_k = (N+DIM_X-1)/DIM_X;
   int n_block = (M+DIM_Y-1)/DIM_Y;
 
   dim3 grid  = dim3(n_block, tile_k, 1);
   dim3 block = dim3(DIM_X, DIM_Y, 1);
-  int shmem = (S*DIM_Y*sizeof(int));
+
+  if (kernel.substr(11, 2) == "V4") 
+    shmem = DIM_X * DIM_Y * sizeof(int);
+  else
+    shmem = S * DIM_Y * sizeof(int);
 
 #ifdef KERNEL_INFO
-  char kernel_name[] = "CacheSampleCsrmm()";
-  printKernelInfo(kernel_name, grid, block, shmem, M, N, S);
+  // char kernel_name[] = "CacheSampleCsrmm()";
+  printKernelInfo(kernel, grid, block, shmem, M, N, S);
 #endif
 
   XCacheSampleCsrmm<IdType, DType>(
-    Kernel, norm_bias, S, 
+    kernel, norm_bias, S, 
     M, N, 
     static_cast<IdType*>(csr.indptr->data),
     static_cast<IdType*>(csr.indices->data),

@@ -193,6 +193,95 @@ __global__ void CacheSampleCSRSpMM_v3(
   }
 }
 
+__global__ void CacheSampleCSRSpMM_v4(
+  const int norm_bias, const int s, const int p, const unsigned int o,
+  const int m, const int k, 
+  const int32_t* A_indptr, const int32_t* A_indices,
+  const float* B, float* C)
+{
+  extern __shared__ int sh[];
+  int sm_offset = threadIdx.y*blockDim.x;
+
+  int cid = blockIdx.y*blockDim.x + threadIdx.x;
+  int rid = blockIdx.x*blockDim.y + threadIdx.y;
+
+  if (rid < m) {
+    int lb = A_indptr[rid];
+    int hb = A_indptr[(rid+1)];
+    int offset;
+    float acc = 0.0;
+    int nnz = hb - lb;
+    float norm;
+
+    if (nnz < s)
+      norm = float(nnz + norm_bias);
+    else
+      norm = float(s + norm_bias);
+
+    int ss = threadIdx.x;
+    int ptr = lb + threadIdx.x;
+    int r, x;
+
+    if (blockIdx.y != gridDim.y-1) {
+      for (int jj=lb; jj < hb && jj < (lb + s); jj+=blockDim.x) {
+        if (ss < hb) {
+          if (nnz < s) {
+            sh[sm_offset + ss] = A_indices[ptr]*k;
+          }
+          else {
+            r = ((ptr*ptr) + o) % p;
+            x = (ptr <= p / 2) ? r : p - r;
+            offset = lb + (x % nnz);
+            sh[sm_offset + ss] = A_indices[offset]*k;
+          }
+        }
+        __syncthreads();
+        // __syncwarp();
+        ptr += blockDim.x;
+
+        for (int kk=0; kk<blockDim.x && jj+kk<hb; kk++) {
+          offset = sh[sm_offset+kk] + cid;
+          acc += B[offset];
+        }
+        __syncthreads();
+        // __syncwarp();
+      }
+      offset = rid*k + cid;
+      C[offset] = acc/norm;
+    }
+    else {
+      int nout = (k - cid + blockDim.x - 1) / blockDim.x;
+      for (int jj=lb; jj < hb && jj < (lb + s); jj+=blockDim.x) {
+        if (ss < hb) {
+          if (nnz < s) {
+            sh[sm_offset + ss] = A_indices[ptr]*k;
+          }
+          else {
+            r = ((ptr*ptr) + o) % p;
+            x = (ptr <= p / 2) ? r : p - r;
+            offset = lb + (x % nnz);
+            sh[sm_offset + ss] = A_indices[offset]*k;
+          }
+        }
+        __syncthreads();
+        // __syncwarp();
+        ptr += blockDim.x;
+
+        for (int kk=0; (kk < blockDim.x) && (jj+kk < hb); kk++) {
+          offset = sh[(sm_offset + kk)] + cid;
+          if (nout > 0) 
+            acc += B[offset];
+        }
+        __syncthreads();
+        // __syncwarp();
+      }
+      offset = rid*k + cid;
+      if (nout > 0)
+        C[offset] = acc/norm;
+    }
+  }
+}
+
 template<typename IdType>
 __global__ void SampleSpMM_FastRand(
   const int m, const int k, int s, int p,
@@ -411,6 +500,21 @@ void XCacheSampleCsrmm<int32_t, float>(
         m, n, 
         A_indptr, A_indices,
         B_data, C_data);
+    }
+    else if (kernel.substr(11, 2) == "V4") {
+      clock_gettime(CLOCK_MONOTONIC, &tp);
+      offset = (unsigned int) tp.tv_nsec;
+
+      CUDA_KERNEL_CALL(CacheSampleCSRSpMM_v4, 
+        grid, block, shmem, 
+        thr_entry->stream, 
+        norm_bias, s, p, offset,
+        m, n, 
+        A_indptr, A_indices,
+        B_data, C_data);
+    }
+    else {
+      LOG(FATAL) << "Unsupported CacheSample Version.";
     }
   }
   
