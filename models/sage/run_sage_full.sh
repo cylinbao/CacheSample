@@ -1,9 +1,12 @@
 # training command
 # python train_full.py --gpu=0 --dataset=reddit --n-hidden=16 --aggregator-type=mean --train --save-model
+# python train_full.py --gpu=0 --dataset=reddit --n-hidden=256 --aggregator-type=mean --train --n-epochs=200 --n-layers=3 --n-runs=10 --kernel=cuSPARSE
+
+python train_full.py --gpu=3 --dataset=reddit --n-hidden=256 --aggregator-type=mean --train --n-epochs=200 --n-layers=3 --n-runs=10 --kernel=CacheSampleV4 --S=1024
+return
 
 # inference command for cusparse
 python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --kernel=cuSPARSE # --log=simrand
-return
 
 # inference command for cache sample
 # python train_full.py --gpu=0 --dataset=reddit --n-hidden=128 --aggregator-type=mean --inference --kernel=CacheSample --S=256 # --log=simrand

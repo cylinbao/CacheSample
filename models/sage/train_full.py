@@ -30,43 +30,37 @@ class GraphSAGE(nn.Module):
                  n_layers,
                  activation,
                  dropout,
-                 aggregator_type,
-                 kernel="cuSPARSE",
-                 S=128):
-                 # use_cache_sample):
+                 aggregator_type):
         super(GraphSAGE, self).__init__()
         self.layers = nn.ModuleList()
         self.dropout = nn.Dropout(dropout)
         self.activation = activation
 
         # input layer
-        self.layers.append(SAGEConv(in_feats, n_hidden, aggregator_type, 
-            kernel=kernel, S=S))
-            # use_cache_sample=use_cache_sample))
+        self.layers.append(SAGEConv(in_feats, n_hidden, aggregator_type))
+            # kernel=kernel, S=S))
         # hidden layers
         for i in range(n_layers - 1):
-            self.layers.append(SAGEConv(n_hidden, n_hidden, aggregator_type, 
-                kernel=kernel, S=S))
-                #use_cache_sample=use_cache_sample))
+            self.layers.append(SAGEConv(n_hidden, n_hidden, aggregator_type))
+                # kernel=kernel, S=S))
         # output layer
-        self.layers.append(SAGEConv(n_hidden, n_classes, aggregator_type, 
-            kernel=kernel, S=S))
-            # use_cache_sample=use_cache_sample)) # activation None
+        self.layers.append(SAGEConv(n_hidden, n_classes, aggregator_type))
+            # kernel=kernel, S=S))
 
-    def forward(self, graph, inputs):
+    def forward(self, graph, inputs, kernel="cuSPARSE", S=0):
         h = self.dropout(inputs)
         for l, layer in enumerate(self.layers):
-            h = layer(graph, h)
+            h = layer(graph, h, kernel, S)
             if l != len(self.layers) - 1:
                 h = self.activation(h)
                 h = self.dropout(h)
         return h
 
 
-def evaluate(model, graph, features, labels, nid):
+def evaluate(model, graph, features, labels, nid, kernel="cuSPARSE", S=0):
     model.eval()
     with torch.no_grad():
-        logits = model(graph, features)
+        logits = model(graph, features, kernel, S)
         logits = logits[nid]
         labels = labels[nid]
         _, indices = torch.max(logits, dim=1)
@@ -74,11 +68,11 @@ def evaluate(model, graph, features, labels, nid):
         return correct.item() * 1.0 / len(labels)
 
 # Run forward and return runtime
-def inference(model, graph, features):
+def inference(model, graph, features, kernel="cuSPARSE", S=0):
     model.eval()
     t0 = time.time()
     with torch.no_grad():
-        logits = model(graph, features)
+        logits = model(graph, features, kernel, S)
         return time.time() - t0
 
 def main(args, n_running, name_base):
@@ -133,9 +127,9 @@ def main(args, n_running, name_base):
                       args.n_layers,
                       F.relu,
                       args.dropout,
-                      args.aggregator_type,
-                      args.kernel,
-                      args.S)
+                      args.aggregator_type)
+                      # args.kernel,
+                      # args.S)
                       # args.cache_sample)
 
     if cuda:
@@ -144,15 +138,15 @@ def main(args, n_running, name_base):
     if args.inference:
         model_name = name_base + "_best.pt"
         model = load_model(args.dir, model, model_name)  
-        acc = evaluate(model, g, features, labels, test_nid)
+        acc = evaluate(model, g, features, labels, test_nid, args.kernel, args.S)
         print("Test accuracy {:.3%}".format(acc))  
 
-        warm_up = 0
-        num_run = 1000
+        warm_up = 2
+        num_run = 10
         times = []
 
         for i in range(warm_up):
-            inference(model, g, features)
+            inference(model, g, features, args.kernel, args.S)
 
         # with profiler.profile(use_cuda=True) as prof:
         #     for i in range(num_run):
@@ -174,7 +168,7 @@ def main(args, n_running, name_base):
         spmm_t_arr = []
         for i in range(num_run):
             with profiler.profile(use_cuda=True) as prof:
-                t = inference(model, g, features)
+                t = inference(model, g, features, args.kernel, args.S)
                 times.append(t)
 
             events = prof.key_averages()
@@ -213,7 +207,7 @@ def main(args, n_running, name_base):
             if epoch >= 3:
                 t0 = time.time()
             # forward
-            logits = model(g, features)
+            logits = model(g, features, kernel=args.kernel, S=args.S)
             loss = F.cross_entropy(logits[train_nid], labels[train_nid])
 
             optimizer.zero_grad()
@@ -223,7 +217,8 @@ def main(args, n_running, name_base):
             if epoch >= 3:
                 dur.append(time.time() - t0)
 
-            acc = evaluate(model, g, features, labels, val_nid)
+            acc = evaluate(model, g, features, labels, val_nid, kernel=args.kernel, 
+                    S=args.S)
             print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
                   "ETputs(KTEPS) {:.2f}".format(epoch, np.mean(dur), loss.item(),
                                                 acc, n_edges / np.mean(dur) / 1000))
@@ -236,7 +231,7 @@ def main(args, n_running, name_base):
                     save_model(args.dir, model, model_name)
 
         print()
-        acc = evaluate(model, g, features, labels, test_nid)
+        acc = evaluate(model, g, features, labels, test_nid, kernel=args.kernel, S=args.S)
         print("Test Accuracy {:.4f}".format(acc))
 
         return acc, model
@@ -291,6 +286,11 @@ if __name__ == '__main__':
         for i in range(args.n_runs):
             acc, model = main(args, i, name_base)
             test_accs.append(acc)
+
+        print()
+        print(f"Test Accs: {test_accs}")
+        print(f"Best Test Accuracy: {np.max(test_accs):.3%}")
+        print(f"Average Test accuracy: {np.mean(test_accs):.3%} ± {np.std(test_accs):.3%}")
         
         if args.save_model:
             best_idx = np.argmax(test_accs)
