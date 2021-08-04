@@ -144,7 +144,7 @@ __global__ void CacheSampleCSRSpMM_v2(
 }
 
 __global__ void CacheSampleCSRSpMM_v3(
-  const int norm_bias, const int s, const int p, const unsigned int o,
+  const int norm_bias, const int s, const int p, const int o,
   const int m, const int k, 
   const int32_t* A_indptr, const int32_t* A_indices,
   const float* B, float* C)
@@ -194,7 +194,7 @@ __global__ void CacheSampleCSRSpMM_v3(
 }
 
 __global__ void CacheSampleCSRSpMM_v4(
-  const int norm_bias, const int s, const int p, const unsigned int o,
+  const int norm_bias, const int s, const int p, const int o,
   const int m, const int k, 
   const int32_t* A_indptr, const int32_t* A_indices,
   const float* B, float* C)
@@ -418,6 +418,7 @@ void XCacheSampleCsrmm(
   const std::string& kernel,
   const int norm_bias,
   const int s, 
+  const int seed, 
   int m, int n, 
   const IdType* A_indptr,
   const IdType* A_indices,
@@ -432,6 +433,7 @@ void XCacheSampleCsrmm<int32_t, float>(
   const std::string& kernel,
   const int norm_bias,
   const int s, 
+  const int seed, 
   int m, int n, 
   const int32_t* A_indptr,
   const int32_t* A_indices,
@@ -441,19 +443,14 @@ void XCacheSampleCsrmm<int32_t, float>(
   int primes[10] = {577, 769, 983, 1193, 1429,
                     1619, 1871, 2089, 2339, 2579};
   int p = 21767;
-  unsigned int offset;
-  struct timespec tp;
 
   auto* thr_entry = runtime::CUDAThreadEntry::ThreadLocal();
 
   if (kernel.length() == 11) {
-    clock_gettime(CLOCK_MONOTONIC, &tp);
-    offset = (unsigned int) tp.tv_nsec;
-
     CUDA_KERNEL_CALL(CacheSampleCSRSpMM_v3, 
       grid, block, shmem, 
       thr_entry->stream, 
-      norm_bias, s, p, offset,
+      norm_bias, s, p, seed,
       m, n, 
       A_indptr, A_indices,
       B_data, C_data);
@@ -478,8 +475,7 @@ void XCacheSampleCsrmm<int32_t, float>(
         B_data, C_data);
     }
     else if (kernel.substr(11, 2) == "V2") {
-      srand(time(NULL));
-      p = primes[rand() % 10];
+      p = primes[seed % 10];
 
       CUDA_KERNEL_CALL(CacheSampleCSRSpMM_v2, 
         grid, block, shmem, 
@@ -490,25 +486,19 @@ void XCacheSampleCsrmm<int32_t, float>(
         B_data, C_data);
     }
     else if (kernel.substr(11, 2) == "V3") {
-      clock_gettime(CLOCK_MONOTONIC, &tp);
-      offset = (unsigned int) tp.tv_nsec;
-
       CUDA_KERNEL_CALL(CacheSampleCSRSpMM_v3, 
         grid, block, shmem, 
         thr_entry->stream, 
-        norm_bias, s, p, offset,
+        norm_bias, s, p, seed,
         m, n, 
         A_indptr, A_indices,
         B_data, C_data);
     }
     else if (kernel.substr(11, 2) == "V4") {
-      clock_gettime(CLOCK_MONOTONIC, &tp);
-      offset = (unsigned int) tp.tv_nsec;
-
       CUDA_KERNEL_CALL(CacheSampleCSRSpMM_v4, 
         grid, block, shmem, 
         thr_entry->stream, 
-        norm_bias, s, p, offset,
+        norm_bias, s, p, seed,
         m, n, 
         A_indptr, A_indices,
         B_data, C_data);

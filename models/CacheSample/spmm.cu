@@ -241,6 +241,8 @@ void CusparseCsrmm2(
       &beta, nullptr, n,
       C_data, n));
   device->FreeWorkspace(ctx, trans_out);
+
+  cudaStreamSynchronize(thr_entry->stream);
 }
 
 
@@ -262,15 +264,13 @@ void CacheSampleCsrmm(
     int x_length, 
     const std::string& kernel,
     const int norm_bias,
-    const int S) {
+    const int S,
+    const int seed) {
   const int M = csr.num_rows;
   const int N = x_length;
   int DIM_X;
   int DIM_Y;
   int shmem;
-
-  // DIM_X = 128;
-  // DIM_Y = 4;
 
   // /*
   // if (N <= 16) {
@@ -316,7 +316,7 @@ void CacheSampleCsrmm(
 #endif
 
   XCacheSampleCsrmm<IdType, DType>(
-    kernel, norm_bias, S, 
+    kernel, norm_bias, S, seed,
     M, N, 
     static_cast<IdType*>(csr.indptr->data),
     static_cast<IdType*>(csr.indices->data),
@@ -487,7 +487,8 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
              std::vector<NDArray> out_aux,
              const std::string& kernel,
              const int norm_bias,
-             const int S) {
+             const int S,
+             const int seed) {
 #ifdef CALL_FUNC
   LOG(INFO) << "calling SpMMCsr()";
 #endif
@@ -534,7 +535,7 @@ void SpMMCsr(const std::string& op, const std::string& reduce,
             ufeat->ctx, csr,
             static_cast<DType*>(ufeat->data),
             static_cast<DType*>(out->data),
-            x_length, kernel, norm_bias, S);
+            x_length, kernel, norm_bias, S, seed);
         }
         else {
           LOG(FATAL) << "Unsupported Kernel: " << kernel;
@@ -655,22 +656,22 @@ template void SpMMCsr<kDLGPU, int32_t, float>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const std::string& kernel, const int norm_bias, const int S);
+    const std::string& kernel, const int norm_bias, const int S, const int seed);
 template void SpMMCsr<kDLGPU, int64_t, float>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const std::string& kernel, const int norm_bias, const int S);
+    const std::string& kernel, const int norm_bias, const int S, const int seed);
 template void SpMMCsr<kDLGPU, int32_t, double>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const std::string& kernel, const int norm_bias, const int S);
+    const std::string& kernel, const int norm_bias, const int S, const int seed);
 template void SpMMCsr<kDLGPU, int64_t, double>(
     const std::string& op, const std::string& reduce,
     const BcastOff& bcast, const CSRMatrix& csr,
     NDArray ufeat, NDArray efeat, NDArray out, std::vector<NDArray> out_aux,
-    const std::string& kernel, const int norm_bias, const int S);
+    const std::string& kernel, const int norm_bias, const int S, const int seed);
 
 template void SpMMCoo<kDLGPU, int32_t, float>(
     const std::string& op, const std::string& reduce,
