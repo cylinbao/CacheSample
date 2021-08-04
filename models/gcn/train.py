@@ -1,6 +1,7 @@
 import argparse, time
 import numpy as np
 import networkx as nx
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,11 +16,11 @@ from model_utils import save_model, load_model
 
 from gcn import GCN
 
-def evaluate(model, g, features, labels, mask, 
-        norm='right', norm_bias=0, kernel='cuSPARSE', S=0):
+def evaluate(model, g, features, labels, mask, norm='right', norm_bias=0, 
+        kernel='cuSPARSE', S=0, seed=0):
     model.eval()
     with torch.no_grad():
-        logits = model(g, features, norm, norm_bias, kernel, S)
+        logits = model(g, features, norm, norm_bias, kernel, S, seed)
         logits = logits[mask]
         labels = labels[mask]
         _, indices = torch.max(logits, dim=1)
@@ -27,12 +28,12 @@ def evaluate(model, g, features, labels, mask,
         return correct.item() * 1.0 / len(labels)
 
 # Run forward and return runtime
-def inference(model, g, features, 
-        norm='right', norm_bias=0, kernel='cuSPARSE', S=0):
+def inference(model, g, features, norm='right', norm_bias=0, 
+        kernel='cuSPARSE', S=0, seed=0):
     model.eval()
     t0 = time.time()
     with torch.no_grad():
-        logits = model(g, features, norm, norm_bias, kernel, S)
+        logits = model(g, features, norm, norm_bias, kernel, S, seed)
     torch.cuda.synchronize()
 
     return time.time() - t0
@@ -156,13 +157,15 @@ def run(args, n_run, name_base):
 
     # initialize graph
     dur = []
+    # with profiler.profile(use_cuda=True) as prof:
     for epoch in range(args.n_epochs):
         model.train()
 
         t0 = time.time()
+        seed = int((t0 - math.floor(t0))*1e7)
         # forward
         logits = model(g, features, norm=norm, norm_bias=args.norm_bias, 
-                        kernel=args.kernel, S=args.S)
+                        kernel=args.kernel, S=args.S, seed=seed)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
 
         optimizer.zero_grad()
@@ -172,10 +175,10 @@ def run(args, n_run, name_base):
         # if epoch >= 3:
         dur.append(time.time() - t0)
 
-        val_acc = evaluate(model, g, features, labels, val_mask, 'right', 0, 'cuSPARSE')
-        print("Epoch {:05d} | Time(ms) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
-              "ETputs(KTEPS) {:.2f}". format(epoch, dur[-1]*1000, loss.item(),
-                val_acc, n_edges / dur[-1] / 1000))
+        val_acc = evaluate(model, g, features, labels, val_mask, 'right', 0, 'cuSPARSE',  0, 0)
+        print("Epoch {:05d} | Time(ms) {:.4f} | Loss {:.4f} | Accuracy {:.4f} ".format(epoch, dur[-1]*1000, 
+            loss.item(), val_acc))
+        # print("Epoch {:05d} | Time(ms) {:.4f}".format(epoch, dur[-1]*1000))
         # format(epoch, np.mean(dur), loss.item(), acc, n_edges / np.mean(dur) / 1000))
                                         
         # if best_val_acc < acc:
@@ -184,17 +187,23 @@ def run(args, n_run, name_base):
         #         model_name = name_base + "_{}.pt".format(n_run)
         #         save_model(args.dir, model, model_name)
 
+    # print(prof.key_averages().table(sort_by="cuda_time_total"))
+
     epoch_t = np.mean(dur[3:])*1000
 
     print()
+    print("Total epoch time (ms): {:.3f}".format(np.sum(dur)))
     print("Mean epoch time (ms): {:.3f}".format(epoch_t))
     # acc = evaluate(model, g, features, labels, test_mask)
-    test_acc = evaluate(model, g, features, labels, test_mask, 'right', 0, 'cuSPARSE')
+    test_acc = evaluate(model, g, features, labels, test_mask, 'right', 0, 'cuSPARSE', 0, 0)
     print("Test accuracy {:.2%}".format(test_acc))
 
     if args.save_model:
         model_name = name_base + "_{}.pt".format(n_run)
         save_model(args.dir, model, model_name)
+
+    with torch.no_grad():
+        torch.cuda.empty_cache()
 
     return test_acc, epoch_t
 
@@ -229,8 +238,9 @@ if __name__ == '__main__':
             help="directory to store model's state dict")
     parser.add_argument("--save-model", action='store_true',
             help="whether to save model")
-    parser.add_argument("--log", type=str, default="none",
-            help="filename of log, if none, then no log")
+    # parser.add_argument("--log", type=str, default="none",
+    #         help="filename of log, if none, then no log")
+    parser.add_argument("--log", action='store_true', help="log or not")
     parser.add_argument("--kernel", type=str, default="cuSPARSE",
             help="Define kernel from cuSPARSE and CacheSample")
     parser.add_argument("--norm-bias", type=int, default=0,
@@ -240,8 +250,8 @@ if __name__ == '__main__':
     parser.set_defaults(self_loop=False)
     args = parser.parse_args()
 
-    # midle_dir = "{}_S{}".format(args.kernel, args.S)
-    midle_dir = "cuSPARSE_S0"
+    midle_dir = "{}_S{}".format(args.kernel, args.S)
+    # midle_dir = "cuSPARSE_S0"
     args.dir = args.dir + '/' + args.dataset + '/' + midle_dir 
     print(args)
 
@@ -274,6 +284,15 @@ if __name__ == '__main__':
         print(f"Best Test Accuracy: {np.max(test_accs):.3%}")
         print(f"Average Test accuracy: {np.mean(test_accs):.3%} ± {np.std(test_accs):.3%}")
         print(f"Mean Epoch Time: {np.mean(epoch_times):.3f}")
+
+        if args.log:
+            with open("./log/{}/gcn_{}_{}_S{}_train_log.csv".format(
+                    args.dataset, args.dataset, args.kernel, args.S), 'a+') as f:
+                string = "n_layer, {}, ".format(args.n_layers + 1)
+                string += "n_hidden, {}, ".format(args.n_hidden)
+                string += "best_acc, {:.3%}, ".format(np.max(test_acc))
+                string += "mea_epoch_t, {:.3f}".format(np.mean(epoch_times))
+                f.write(string + "\n")
 
     if args.inference:
         run(args, 0, name_base)
