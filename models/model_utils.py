@@ -62,6 +62,6 @@ class EarlyStopping:
         save_model(self.path, model, self.fname)
         self.val_loss_min = val_loss
 
-    def load_checkpoint(self, model):
-        return load_model(self.path, model, self.fname)
-        # return  torch.load(self.fname)
+    def load_checkpoint(self, gpu=0):
+        fname = os.path.join(self.path, self.fname)
+        return torch.load(fname, map_location=f'cuda:{gpu}')

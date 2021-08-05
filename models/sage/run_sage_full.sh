@@ -1,52 +1,7 @@
 # training command
-# python train_full.py --gpu=0 --dataset=reddit --n-hidden=16 --aggregator-type=mean --train --save-model
+python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --early-stop --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=10 --kernel=cuSPARSE --S=0 
 
-# python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=cuSPARSE --S=0 --early-stop --log
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=512  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=cuSPARSE --S=0 --early-stop --log
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=3 --n-epochs=200 --n-runs=5 --kernel=cuSPARSE --S=0 --early-stop --log
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=512  --n-layers=3 --n-epochs=200 --n-runs=5 --kernel=cuSPARSE --S=0 --early-stop --log
-return
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=cuSPARSE --S=0 --early-stop
-
-# CacheSample, 256, 1
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=128 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=256 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=512 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=1024 --early-stop
-
-# CacheSample, 512, 1
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=512  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=128 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=512  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=256 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=512  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=512 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=512  --n-layers=1 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=1024 --early-stop
-
-# CacheSample, 256, 4
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=3 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=128 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=3 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=256 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=3 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=512 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=256  --n-layers=3 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=1024 --early-stop
-
-# CacheSample, 512, 4
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=512  --n-layers=3 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=128 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=512  --n-layers=3 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=256 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=512  --n-layers=3 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=512 --early-stop
-
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --n-hidden=512  --n-layers=3 --n-epochs=200 --n-runs=5 --kernel=CacheSampleV4 --S=1024 --early-stop
+python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --early-stop --log --n-hidden=256  --n-layers=1 --n-epochs=200 --n-runs=10 --kernel=CacheSampleV4 --S=128
 return
 
 # inference command for cusparse

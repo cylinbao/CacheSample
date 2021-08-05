@@ -138,7 +138,7 @@ def main(args, n_running, name_base):
 
     if args.inference:
         model_name = name_base + "_best.pt"
-        model = load_model(args.dir, model, model_name)  
+        model = load_model(args.dir, model, model_name, args.gpu)
         loss, acc = evaluate(model, g, features, labels, test_nid, args.kernel, args.S)
         print("Test accuracy {:.3%}".format(acc))  
 
@@ -235,7 +235,7 @@ def main(args, n_running, name_base):
 
             if args.early_stop is True  and early_stop.early_stop:
                 print("Early stopping.")
-                model = early_stop.load_checkpoint(model)
+                model.load_state_dict(early_stop.load_checkpoint(args.gpu))
                 break
 
         print()
