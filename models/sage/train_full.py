@@ -8,6 +8,7 @@ import argparse
 import time
 import numpy as np
 import networkx as nx
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -46,10 +47,10 @@ class GraphSAGE(nn.Module):
         self.layers.append(SAGEConv(n_hidden, n_classes, aggregator_type))
             # kernel=kernel, S=S))
 
-    def forward(self, graph, inputs, kernel="cuSPARSE", S=0):
+    def forward(self, graph, inputs, kernel="cuSPARSE", S=0, seed=None):
         h = self.dropout(inputs)
         for l, layer in enumerate(self.layers):
-            h = layer(graph, h, kernel, S)
+            h = layer(graph, h, kernel, S, seed=seed)
             if l != len(self.layers) - 1:
                 h = self.activation(h)
                 h = self.dropout(h)
@@ -212,8 +213,9 @@ def main(args, n_running, name_base):
             model.train()
             # if epoch >= 3:
             t0 = time.time()
+            seed = int((t0 - math.floor(t0))*1e7)
             # forward
-            logits = model(g, features, kernel=args.kernel, S=args.S)
+            logits = model(g, features, kernel=args.kernel, S=args.S, seed=seed)
             loss = F.cross_entropy(logits[train_nid], labels[train_nid])
 
             optimizer.zero_grad()
