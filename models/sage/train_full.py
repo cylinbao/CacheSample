@@ -15,11 +15,10 @@ import dgl
 from dgl import DGLGraph
 from dgl.data import register_data_args, load_data
 from dgl.nn.pytorch.conv import SAGEConv
+import torch.autograd.profiler as profiler
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
-from model_utils import save_model, load_model
-import dgl.backend.pytorch.sparse as dgl_pytorch_sp
-import torch.autograd.profiler as profiler
+from model_utils import save_model, load_model, EarlyStopping
 
 
 class GraphSAGE(nn.Module):
@@ -63,9 +62,11 @@ def evaluate(model, graph, features, labels, nid, kernel="cuSPARSE", S=0):
         logits = model(graph, features, kernel, S)
         logits = logits[nid]
         labels = labels[nid]
+        loss = F.cross_entropy(logits, labels)
         _, indices = torch.max(logits, dim=1)
         correct = torch.sum(indices == labels)
-        return correct.item() * 1.0 / len(labels)
+        acc = correct.item() * 1.0 / len(labels)
+        return loss.item(), acc
 
 # Run forward and return runtime
 def inference(model, graph, features, kernel="cuSPARSE", S=0):
@@ -138,7 +139,7 @@ def main(args, n_running, name_base):
     if args.inference:
         model_name = name_base + "_best.pt"
         model = load_model(args.dir, model, model_name)  
-        acc = evaluate(model, g, features, labels, test_nid, args.kernel, args.S)
+        loss, acc = evaluate(model, g, features, labels, test_nid, args.kernel, args.S)
         print("Test accuracy {:.3%}".format(acc))  
 
         warm_up = 2
@@ -182,30 +183,35 @@ def main(args, n_running, name_base):
         std_spmm_t = np.std(spmm_t_arr)
         print("GSpMM CUDA kernel, Avg Time: {:.3f} (ms), Std: {:.3f}".format(avg_spmm_t, std_spmm_t))
 
-        if args.log != "none":
-            with open("./log/" + args.dataset + "_" + args.log + "_log.csv", 'a+') as f:
-                if args.kernel == "CacheSample":
-                    S = args.S
-                else:
-                    S = 0
-                string = "S, {}, ".format(S)
-                string += "accuracy, {:.4f}, ".format(acc)
-                string += "avg cuda time, {:.3f}, ".format(avg_spmm_t)
-                string += "avg total time, {:.3f}".format(avg_t)
-                f.write(string + "\n")
+        # if args.log != "none":
+        #     with open("./log/" + args.dataset + "_" + args.log + "_log.csv", 'a+') as f:
+        #         if args.kernel == "CacheSample":
+        #             S = args.S
+        #         else:
+        #             S = 0
+        #         string = "S, {}, ".format(S)
+        #         string += "accuracy, {:.4f}, ".format(acc)
+        #         string += "avg cuda time, {:.3f}, ".format(avg_spmm_t)
+        #         string += "avg total time, {:.3f}".format(avg_t)
+        #         f.write(string + "\n")
         return 
 
     if args.train:
         # use optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+
+        model_name = name_base + "_{}.pt".format(n_running)
+        if args.early_stop is True:
+            early_stop = EarlyStopping(path=args.dir, fname=model_name, verbose=False)
 
         # initialize graph
         dur = []
         best_val_acc = 0
         for epoch in range(args.n_epochs):
             model.train()
-            if epoch >= 3:
-                t0 = time.time()
+            # if epoch >= 3:
+            t0 = time.time()
             # forward
             logits = model(g, features, kernel=args.kernel, S=args.S)
             loss = F.cross_entropy(logits[train_nid], labels[train_nid])
@@ -213,28 +219,43 @@ def main(args, n_running, name_base):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            scheduler.step()
 
-            if epoch >= 3:
-                dur.append(time.time() - t0)
+            # if epoch >= 3:
+            dur.append(time.time() - t0)
 
-            acc = evaluate(model, g, features, labels, val_nid, kernel=args.kernel, 
+            val_loss, val_acc = evaluate(model, g, features, labels, val_nid, kernel=args.kernel, 
                     S=args.S)
-            print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.4f} | "
-                  "ETputs(KTEPS) {:.2f}".format(epoch, np.mean(dur), loss.item(),
-                                                acc, n_edges / np.mean(dur) / 1000))
-            
-            if best_val_acc < acc:
-                best_val_acc = acc
 
-                if args.save_model:
-                    model_name = name_base + "_best_{}.pt".format(n_running)
-                    save_model(args.dir, model, model_name)
+            print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.5f} | "
+                  .format(epoch, np.mean(dur[-1]), loss.item(), val_acc))
+
+            if args.early_stop is True:
+                early_stop(val_loss, model)
+
+            if args.early_stop is True  and early_stop.early_stop:
+                print("Early stopping.")
+                model = early_stop.load_checkpoint(model)
+                break
 
         print()
-        acc = evaluate(model, g, features, labels, test_nid, kernel=args.kernel, S=args.S)
-        print("Test Accuracy {:.4f}".format(acc))
+        test_loss, test_acc = evaluate(model, g, features, labels, val_nid, kernel=args.kernel, S=args.S)
+        print("Val Accuracy {:.5f}".format(test_acc))
+        test_loss, test_acc = evaluate(model, g, features, labels, test_nid, kernel=args.kernel, S=args.S)
+        print("Test Accuracy {:.5f}".format(test_acc))
 
-        return acc, model
+        epoch_t = np.mean(dur[3:])*1000
+        print("Total epoch time (ms): {:.3f}".format(np.sum(dur)))
+        print("Mean epoch time (ms): {:.3f}".format(epoch_t))
+
+        # if args.save_model:
+        #     model_name = name_base + "_{}.pt".format(n_run)
+        #     save_model(args.dir, model, model_name)
+
+        with torch.no_grad():
+            torch.cuda.empty_cache()
+
+        return test_acc, epoch_t
 
 
 if __name__ == '__main__':
@@ -264,42 +285,63 @@ if __name__ == '__main__':
             help="perform inference")
     parser.add_argument("--kernel", type=str, default="cuSPARSE",
             help="Define kernel from cuSPARSE and CacheSample")
-    parser.add_argument("--S", type=int, default=128,
+    parser.add_argument("--S", type=int, default=0,
             help="Define S value for CacheSample kernel")
     # parser.add_argument("--cache-sample", action='store_true',
     #         help="Use CacheSample kernel")
-    parser.add_argument("--save-model", action='store_true',
-            help="whether to save model")
-    parser.add_argument("--log", type=str, default="none",
-            help="filename of log, if none, then no log")
+    # parser.add_argument("--save-model", action='store_true',
+    #         help="whether to save model")
+    parser.add_argument("--early-stop", action='store_true',
+            help="whether to early stoearly stopp")
+    parser.add_argument("--log", action='store_true', help="log or not")
     parser.add_argument("--n-runs", type=int, default=10,
             help="filename of log, if none, then no log")
     args = parser.parse_args()
+
+    midle_dir = "{}_S{}".format(args.kernel, args.S)
+    # midle_dir = "cuSPARSE_S0"
+    args.dir = args.dir + '/' + args.dataset + '/' + midle_dir 
+
     print(args)
 
     assert (args.train or args.inference) == True
 
-    test_accs = []
     name_base = "sage_{}_{}_agg_{}_layer_{}_hidden".format(args.dataset, 
                 args.aggregator_type, args.n_layers, args.n_hidden)
+
+    test_accs = []
+    epoch_times = []
     if args.train:
         for i in range(args.n_runs):
-            acc, model = main(args, i, name_base)
+            acc, epoch_t = main(args, i, name_base)
             test_accs.append(acc)
+            epoch_times.append(epoch_t)
 
         print()
         print(f"Test Accs: {test_accs}")
         print(f"Best Test Accuracy: {np.max(test_accs):.3%}")
         print(f"Average Test accuracy: {np.mean(test_accs):.3%} ± {np.std(test_accs):.3%}")
-        
-        if args.save_model:
+        print(f"Mean Epoch Time: {np.mean(epoch_times):.3f}")
+
+        if args.early_stop:
             best_idx = np.argmax(test_accs)
             print("best_idx: ", best_idx)
-            print("best test acc: ", test_accs[best_idx])
-            model_name = name_base + "_best"
-            cmd = "cp {}/{}_{}.pt {}/{}.pt".format(args.dir, model_name, best_idx, args.dir, model_name)
+            model_name = name_base 
+            cmd = "cp {}/{}_{}.pt {}/{}_best.pt".format(args.dir, model_name, best_idx, args.dir, model_name)
+            print(cmd)
             os.system(cmd)
-            # os.system("rm ./{}/{}_*.pt".format(args.dir, model_name))
+            for i in range(args.n_runs):
+                cmd = "rm {}/{}_{}.pt".format(args.dir, model_name, i)
+                print(cmd)
+                os.system(cmd)
+        if args.log:
+            with open("./log/{}/sage_{}_mean_agg_{}_S{}_train_log.csv".format(
+                    args.dataset, args.dataset, args.kernel, args.S), 'a+') as f:
+                string = "n_layer, {}, ".format(args.n_layers + 1)
+                string += "n_hidden, {}, ".format(args.n_hidden)
+                string += "best_acc, {:.3%}, ".format(np.max(test_accs))
+                string += "mea_epoch_t, {:.3f}".format(np.mean(epoch_times))
+                f.write(string + "\n")
     else:
         main(args, 0, name_base)
 
