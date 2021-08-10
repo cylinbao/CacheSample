@@ -1,5 +1,54 @@
 # training commend, modify parameters for your need
-python train.py --gpu=0 --dataset=pubmed --n-hidden=128 --n-layers=3 --self-loop --train --n-runs=10 --kernel=cuSPARSE # --save-model
+# python train.py --gpu=0 --dataset=pubmed --n-hidden=128 --n-layers=3 --self-loop --train --n-runs=10 --kernel=cuSPARSE # --save-model
+
+# cuSPARSE hidden 128, layer 2, 4, 8
+python train.py --gpu=0 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=1 --n-epochs=200 --n-runs=20 --kernel=cuSPARSE --S=0 --best-val 
+python train.py --gpu=0 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=3 --n-epochs=200 --n-runs=20 --kernel=cuSPARSE --S=0 --best-val 
+python train.py --gpu=0 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=7 --n-epochs=200 --n-runs=20 --kernel=cuSPARSE --S=0 --best-val 
+
+# CacheSampleV3 hidden 128, layer 2
+python train.py --gpu=0 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=1 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=16 --best-val
+python train.py --gpu=0 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=1 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=32 --best-val
+python train.py --gpu=0 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=1 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=64 --best-val
+python train.py --gpu=0 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=1 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=128 --best-val
+return
+
+# CacheSampleV3 hidden 128, layer 4
+python train.py --gpu=2 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=3 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=16 --best-val
+python train.py --gpu=2 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=3 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=32 --best-val
+python train.py --gpu=2 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=3 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=64 --best-val
+python train.py --gpu=2 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=3 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=128 --best-val
+
+# CacheSampleV3 hidden 128, layer 8
+python train.py --gpu=2 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=7 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=16 --best-val
+python train.py --gpu=2 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=7 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=32 --best-val
+python train.py --gpu=2 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=7 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=64 --best-val
+python train.py --gpu=2 --dataset=pubmed --self-loop --train --log --n-hidden=128 --n-layers=7 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=128 --best-val 
+return
+                                                                                        
+# cuSPARSE hidden 256, layer 2, 4, 8
+python train.py --gpu=3 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=20 --kernel=cuSPARSE --S=0 --best-val 
+python train.py --gpu=3 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=3 --n-epochs=200 --n-runs=20 --kernel=cuSPARSE --S=0 --best-val 
+python train.py --gpu=3 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=7 --n-epochs=200 --n-runs=20 --kernel=cuSPARSE --S=0 --best-val 
+
+# CacheSampleV3 hidden 256, layer 2
+python train.py --gpu=3 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=16 --best-val
+python train.py --gpu=3 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=32 --best-val
+python train.py --gpu=3 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=64 --best-val
+python train.py --gpu=3 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=128 --best-val
+return
+
+# CacheSampleV3 hidden 256, layer 2
+python train.py --gpu=1 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=3 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=16 --best-val 
+python train.py --gpu=1 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=3 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=32 --best-val
+python train.py --gpu=1 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=3 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=64 --best-val
+python train.py --gpu=1 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=3 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=128 --best-val
+
+# CacheSampleV3 hidden 256, layer 2
+python train.py --gpu=1 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=7 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=16 --best-val
+python train.py --gpu=1 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=7 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=32 --best-val
+python train.py --gpu=1 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=7 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=64 --best-val
+python train.py --gpu=1 --dataset=pubmed --self-loop --train --log --n-hidden=256 --n-layers=7 --n-epochs=200 --n-runs=20 --kernel=CacheSampleV3 --S=128 --best-val
 return
 
 # python train.py --gpu=0 --dataset=pubmed --n-hidden=128 --n-layers=3 --self-loop --train --n-runs=2 --kernel=CacheSample --S=32 --save-model

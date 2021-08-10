@@ -19,7 +19,7 @@ from dgl.nn.pytorch.conv import SAGEConv
 import torch.autograd.profiler as profiler
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
-from model_utils import save_model, load_model, EarlyStopping
+from model_utils import save_model, load_model, EarlyStopping, BestVal
 
 
 class GraphSAGE(nn.Module):
@@ -140,7 +140,8 @@ def main(args, n_running, name_base):
     if args.inference:
         model_name = name_base + "_best.pt"
         model = load_model(args.dir, model, model_name, args.gpu)
-        loss, acc = evaluate(model, g, features, labels, test_nid, args.kernel, args.S)
+        # loss, acc = evaluate(model, g, features, labels, test_nid, args.kernel, args.S)
+        loss, acc = evaluate(model, g, features, labels, test_nid, 'cuSPARSE', 0)
         print("Test accuracy {:.3%}".format(acc))  
 
         warm_up = 2
@@ -205,6 +206,8 @@ def main(args, n_running, name_base):
         model_name = name_base + "_{}.pt".format(n_running)
         if args.early_stop is True:
             early_stop = EarlyStopping(path=args.dir, fname=model_name, verbose=False)
+        if args.best_val is True:
+            best_val = BestVal(path=args.dir, fname=model_name)
 
         # initialize graph
         dur = []
@@ -235,24 +238,30 @@ def main(args, n_running, name_base):
             if args.early_stop is True:
                 early_stop(val_loss, model)
 
-            if args.early_stop is True  and early_stop.early_stop:
-                print("Early stopping.")
-                model.load_state_dict(early_stop.load_checkpoint(args.gpu))
-                break
+                if early_stop.early_stop:
+                    print("Early stopping.")
+                    model.load_state_dict(early_stop.load_checkpoint(args.gpu))
+                    break
+
+            if args.best_val is True:
+                best_val(val_loss, model)
+
+        if args.best_val is True:
+            model.load_state_dict(best_val.load_checkpoint(args.gpu))
 
         print()
-        test_loss, test_acc = evaluate(model, g, features, labels, val_nid, kernel=args.kernel, S=args.S)
-        print("Val Accuracy {:.5f}".format(test_acc))
-        test_loss, test_acc = evaluate(model, g, features, labels, test_nid, kernel=args.kernel, S=args.S)
+        val_loss, val_acc = evaluate(model, g, features, labels, val_nid, kernel='cuSPARSE', S=0)
+        print("Val Accuracy {:.5f}".format(val_acc))
+        test_loss, test_acc = evaluate(model, g, features, labels, test_nid, kernel='cuSPARSE', S=0)
         print("Test Accuracy {:.5f}".format(test_acc))
 
         epoch_t = np.mean(dur[3:])*1000
         print("Total epoch time (ms): {:.3f}".format(np.sum(dur)))
         print("Mean epoch time (ms): {:.3f}".format(epoch_t))
 
-        # if args.save_model:
-        #     model_name = name_base + "_{}.pt".format(n_run)
-        #     save_model(args.dir, model, model_name)
+        if args.save_model:
+            model_name = name_base + "_{}.pt".format(n_run)
+            save_model(args.dir, model, model_name)
 
         with torch.no_grad():
             torch.cuda.empty_cache()
@@ -289,12 +298,12 @@ if __name__ == '__main__':
             help="Define kernel from cuSPARSE and CacheSample")
     parser.add_argument("--S", type=int, default=0,
             help="Define S value for CacheSample kernel")
-    # parser.add_argument("--cache-sample", action='store_true',
-    #         help="Use CacheSample kernel")
-    # parser.add_argument("--save-model", action='store_true',
-    #         help="whether to save model")
+    parser.add_argument("--save-model", action='store_true',
+            help="whether to save model")
     parser.add_argument("--early-stop", action='store_true',
             help="whether to early stoearly stopp")
+    parser.add_argument("--best-val", action='store_true',
+            help="keep the best validation model")
     parser.add_argument("--log", action='store_true', help="log or not")
     parser.add_argument("--n-runs", type=int, default=10,
             help="filename of log, if none, then no log")
@@ -325,7 +334,7 @@ if __name__ == '__main__':
         print(f"Average Test accuracy: {np.mean(test_accs):.3%} ± {np.std(test_accs):.3%}")
         print(f"Mean Epoch Time: {np.mean(epoch_times):.3f}")
 
-        if args.early_stop:
+        if args.save_model or args.early_stop or args.best_val:
             best_idx = np.argmax(test_accs)
             print("best_idx: ", best_idx)
             model_name = name_base 
@@ -336,6 +345,7 @@ if __name__ == '__main__':
                 cmd = "rm {}/{}_{}.pt".format(args.dir, model_name, i)
                 print(cmd)
                 os.system(cmd)
+
         if args.log:
             with open("./log/{}/sage_{}_mean_agg_{}_S{}_train_log.csv".format(
                     args.dataset, args.dataset, args.kernel, args.S), 'a+') as f:

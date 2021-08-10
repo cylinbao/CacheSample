@@ -58,9 +58,27 @@ class EarlyStopping:
         '''Saves model when validation loss decrease.'''
         if self.verbose:
             print('Validation loss decreased (%.6f --> %.6f).  Saving model ...'%(self.val_loss_min, val_loss))
-        # torch.save(model.state_dict(), self.fname)
         save_model(self.path, model, self.fname)
         self.val_loss_min = val_loss
+
+    def load_checkpoint(self, gpu=0):
+        fname = os.path.join(self.path, self.fname)
+        return torch.load(fname, map_location=f'cuda:{gpu}')
+
+class BestVal:
+    def __init__(self, path=None, fname=None):
+        self.val_loss_min = np.Inf
+        self.path = path
+        self.fname = fname
+
+    def __call__(self, val_loss, model):
+        if val_loss < self.val_loss_min:
+            self.val_loss_min = val_loss
+            self.save_checkpoint(model)
+
+    def save_checkpoint(self, model):
+        '''Saves model when validation loss decrease.'''
+        save_model(self.path, model, self.fname)
 
     def load_checkpoint(self, gpu=0):
         fname = os.path.join(self.path, self.fname)

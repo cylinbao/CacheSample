@@ -12,7 +12,7 @@ from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
 from dgl.data import RedditDataset
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
-from model_utils import save_model, load_model
+from model_utils import save_model, load_model, EarlyStopping, BestVal
 
 from gcn import GCN
 
@@ -25,7 +25,9 @@ def evaluate(model, g, features, labels, mask, norm='right', norm_bias=0,
         labels = labels[mask]
         _, indices = torch.max(logits, dim=1)
         correct = torch.sum(indices == labels)
-        return correct.item() * 1.0 / len(labels)
+        acc = correct.item() * 1.0 / len(labels)
+        loss = F.cross_entropy(logits, labels)
+        return loss.item(), acc
 
 # Run forward and return runtime
 def inference(model, g, features, norm='right', norm_bias=0, 
@@ -104,9 +106,8 @@ def run(args, n_run, name_base):
     if args.inference:
         model_name = name_base + "_best.pt"
         model = load_model(args.dir, model, model_name)
-        acc = evaluate(model, g, features, labels, test_mask, 
-                norm, args.norm_bias, args.kernel, args.S)
-        # acc = evaluate(model, g, features, labels, test_mask, 'right', 0, 'cuSPARSE')
+        loss, acc = evaluate(model, g, features, labels, test_mask, 
+                        norm, args.norm_bias, args.kernel, args.S)
         print("Test accuracy {:.3%}".format(acc))
 
         num_run = 10
@@ -154,6 +155,13 @@ def run(args, n_run, name_base):
     optimizer = torch.optim.Adam(model.parameters(),
                                  lr=args.lr,
                                  weight_decay=args.weight_decay)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
+
+    model_name = name_base + "_{}.pt".format(n_run)
+    if args.early_stop is True:
+        early_stop = EarlyStopping(path=args.dir, fname=model_name, verbose=False)
+    if args.best_val is True:
+        best_val = BestVal(path=args.dir, fname=model_name)
 
     # initialize graph
     dur = []
@@ -171,32 +179,36 @@ def run(args, n_run, name_base):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        scheduler.step()
 
         # if epoch >= 3:
         dur.append(time.time() - t0)
 
-        val_acc = evaluate(model, g, features, labels, val_mask, 'right', 0, 'cuSPARSE',  0, 0)
-        print("Epoch {:05d} | Time(ms) {:.4f} | Loss {:.4f} | Accuracy {:.4f} ".format(epoch, dur[-1]*1000, 
-            loss.item(), val_acc))
-        # print("Epoch {:05d} | Time(ms) {:.4f}".format(epoch, dur[-1]*1000))
-        # format(epoch, np.mean(dur), loss.item(), acc, n_edges / np.mean(dur) / 1000))
-                                        
-        # if best_val_acc < acc:
-        #     best_val_acc = acc
-        #     if args.save_model:
-        #         model_name = name_base + "_{}.pt".format(n_run)
-        #         save_model(args.dir, model, model_name)
+        val_loss, val_acc = evaluate(model, g, features, labels, val_mask, 'right', 0, 'cuSPARSE',  0, 0)
+        print("Epoch {:05d} | Time(ms) {:.4f} | Train Loss {:.4f} | Val Loss {:.4f} | Accuracy {:.4f} ".format(epoch, dur[-1]*1000, loss.item(), val_loss, val_acc))
 
-    # print(prof.key_averages().table(sort_by="cuda_time_total"))
+        if args.early_stop is True:
+            early_stop(val_loss, model)
+            if early_stop.early_stop:
+                print("Early stopping.")
+                model.load_state_dict(early_stop.load_checkpoint(args.gpu))
+                break
 
-    epoch_t = np.mean(dur[3:])*1000
+        if args.best_val is True:
+            best_val(val_loss, model)
+
+    if args.best_val is True:
+        model.load_state_dict(best_val.load_checkpoint(args.gpu))
 
     print()
+    val_loss, val_acc = evaluate(model, g, features, labels, val_mask, 'right', 0, 'cuSPARSE', 0, 0)
+    print("Val Accuracy {:.5f}".format(val_acc))
+    test_loss, test_acc = evaluate(model, g, features, labels, test_mask, 'right', 0, 'cuSPARSE', 0, 0)
+    print("Test Accuracy {:.5f}".format(test_acc))
+
+    epoch_t = np.mean(dur[3:])*1000
     print("Total epoch time (ms): {:.3f}".format(np.sum(dur)))
     print("Mean epoch time (ms): {:.3f}".format(epoch_t))
-    # acc = evaluate(model, g, features, labels, test_mask)
-    test_acc = evaluate(model, g, features, labels, test_mask, 'right', 0, 'cuSPARSE', 0, 0)
-    print("Test accuracy {:.2%}".format(test_acc))
 
     if args.save_model:
         model_name = name_base + "_{}.pt".format(n_run)
@@ -238,8 +250,10 @@ if __name__ == '__main__':
             help="directory to store model's state dict")
     parser.add_argument("--save-model", action='store_true',
             help="whether to save model")
-    # parser.add_argument("--log", type=str, default="none",
-    #         help="filename of log, if none, then no log")
+    parser.add_argument("--early-stop", action='store_true',
+            help="whether to early stoearly stopp")
+    parser.add_argument("--best-val", action='store_true',
+            help="keep the best validation model")
     parser.add_argument("--log", action='store_true', help="log or not")
     parser.add_argument("--kernel", type=str, default="cuSPARSE",
             help="Define kernel from cuSPARSE and CacheSample")
@@ -266,7 +280,13 @@ if __name__ == '__main__':
             test_accs.append(test_acc)
             epoch_times.append(epoch_t)
 
-        if args.save_model:
+        print()
+        print(f"Test Accs: {test_accs}")
+        print(f"Best Test Accuracy: {np.max(test_accs):.3%}")
+        print(f"Average Test accuracy: {np.mean(test_accs):.3%} ± {np.std(test_accs):.3%}")
+        print(f"Mean Epoch Time: {np.mean(epoch_times):.3f} ± {np.std(epoch_times):.3f}")
+
+        if args.save_model or args.early_stop or args.best_val:
             best_idx = np.argmax(test_accs)
             print("best_idx: ", best_idx)
             model_name = name_base 
@@ -278,20 +298,15 @@ if __name__ == '__main__':
                 print(cmd)
                 os.system(cmd)
 
-        print()
-        print(f"Runned {args.n_runs} times")
-        print(f"Test Accs: {test_accs}")
-        print(f"Best Test Accuracy: {np.max(test_accs):.3%}")
-        print(f"Average Test accuracy: {np.mean(test_accs):.3%} ± {np.std(test_accs):.3%}")
-        print(f"Mean Epoch Time: {np.mean(epoch_times):.3f}")
-
         if args.log:
             with open("./log/{}/gcn_{}_{}_S{}_train_log.csv".format(
                     args.dataset, args.dataset, args.kernel, args.S), 'a+') as f:
                 string = "n_layer, {}, ".format(args.n_layers + 1)
                 string += "n_hidden, {}, ".format(args.n_hidden)
-                string += "best_acc, {:.3%}, ".format(np.max(test_acc))
-                string += "mea_epoch_t, {:.3f}".format(np.mean(epoch_times))
+                string += "best_acc, {:.3%}, ".format(np.max(test_accs))
+                string += "acc_std, {:.3%}, ".format(np.std(test_accs))
+                string += "mean_epoch_t, {:.3f}, ".format(np.mean(epoch_times))
+                string += "epoch_t_std, {:.3f}".format(np.std(epoch_times))
                 f.write(string + "\n")
 
     if args.inference:

@@ -1,10 +1,28 @@
 # able to achieve 94.45% accuracy on reddit dataset
 
 # training commend, modify parameters for your need
-# python train.py --gpu=0 --dataset=reddit --n-hidden=256 --n-layers=1 --self-loop --n-epochs=5 --n-runs=1 --train --kernel=cuSPARSE # --save-model
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=25 --kernel=cuSPARSE --S=0 --best-val 
 
-python train.py --gpu=3 --dataset=reddit --n-hidden=256 --n-layers=1 --self-loop --train --n-epochs=200 --n-runs=20 --kernel=CacheSampleV4 --S=1024 --save-model --log
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=512 --best-val 
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=1024 --best-val 
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=1536 --best-val 
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=2048 --best-val 
+
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=3 --n-epochs=200 --n-runs=25 --kernel=cuSPARSE --S=0 --best-val 
+
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=3 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=512 --best-val 
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=3 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=1024 --best-val 
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=3 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=1536 --best-val 
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=3 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=2048 --best-val 
+
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=7 --n-epochs=200 --n-runs=25 --kernel=cuSPARSE --S=0 --best-val 
+
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=7 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=512 --best-val 
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=7 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=1024 --best-val 
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=7 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=1536 --best-val 
+python train.py --gpu=0 --dataset=reddit --self-loop --train --log --n-hidden=256 --n-layers=7 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=2048 --best-val 
 return
+
 
 # inference commend, for the original kernel
 # python train.py --gpu=0 --dataset=reddit --n-hidden=256 --n-layers=1 --self-loop --inference --kernel=cuSPARSE
