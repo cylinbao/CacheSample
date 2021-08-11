@@ -299,8 +299,12 @@ if __name__ == '__main__':
                 os.system(cmd)
 
         if args.log:
-            with open("./log/{}/gcn_{}_{}_S{}_train_log.csv".format(
-                    args.dataset, args.dataset, args.kernel, args.S), 'a+') as f:
+            log_path = "./log/{}".format(args.dataset)
+            if not os.path.exists(log_path):
+                os.makedirs(log_path)
+            log_name = "{}/gcn_{}_{}_S{}_train_log.csv".format(log_path, args.dataset, 
+                    args.kernel, args.S)
+            with open(log_name, 'a+') as f:
                 string = "n_layer, {}, ".format(args.n_layers + 1)
                 string += "n_hidden, {}, ".format(args.n_hidden)
                 string += "best_acc, {:.3%}, ".format(np.max(test_accs))

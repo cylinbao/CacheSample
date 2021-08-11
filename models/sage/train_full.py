@@ -201,7 +201,7 @@ def main(args, n_running, name_base):
     if args.train:
         # use optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
 
         model_name = name_base + "_{}.pt".format(n_running)
         if args.early_stop is True:
@@ -229,11 +229,11 @@ def main(args, n_running, name_base):
             # if epoch >= 3:
             dur.append(time.time() - t0)
 
-            val_loss, val_acc = evaluate(model, g, features, labels, val_nid, kernel=args.kernel, 
-                    S=args.S)
+            val_loss, val_acc = evaluate(model, g, features, labels, val_nid, 
+                                    kernel=args.kernel, S=args.S)
 
-            print("Epoch {:05d} | Time(s) {:.4f} | Loss {:.4f} | Accuracy {:.5f} | "
-                  .format(epoch, np.mean(dur[-1]), loss.item(), val_acc))
+            print("Epoch {:05d} | Time(ms) {:.4f} | Loss {:.4f} | Accuracy {:.5f} | "
+                  .format(epoch, dur[-1]*1000, loss.item(), val_acc))
 
             if args.early_stop is True:
                 early_stop(val_loss, model)
@@ -347,12 +347,18 @@ if __name__ == '__main__':
                 os.system(cmd)
 
         if args.log:
-            with open("./log/{}/sage_{}_mean_agg_{}_S{}_train_log.csv".format(
-                    args.dataset, args.dataset, args.kernel, args.S), 'a+') as f:
+            log_path = "./log/{}".format(args.dataset)
+            if not os.path.exists(log_path):
+                os.makedirs(log_path)
+            log_name = "{}/sage_{}_mean_agg_{}_S{}_train_log.csv".format(log_path, 
+                        args.dataset, args.kernel, args.S)
+            with open(log_name, 'a+') as f:
                 string = "n_layer, {}, ".format(args.n_layers + 1)
                 string += "n_hidden, {}, ".format(args.n_hidden)
                 string += "best_acc, {:.3%}, ".format(np.max(test_accs))
+                string += "acc_std, {:.3%}, ".format(np.std(test_accs))
                 string += "mea_epoch_t, {:.3f}".format(np.mean(epoch_times))
+                string += "epoch_t_std, {:.3f}".format(np.std(epoch_times))
                 f.write(string + "\n")
     else:
         main(args, 0, name_base)
