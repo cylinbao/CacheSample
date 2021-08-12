@@ -1,5 +1,7 @@
 # training command
 # python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --train --save-model
+python train_full.py --gpu=0 --dataset=pubmed --aggregator-type=mean --train --n-hidden=128 --n-layers=7 --n-epochs=10 --n-runs=2 --kernel=cuSPARSE --S=0 # --best-val --log
+return
 
 # inference command for cusparse
 python train_full.py --gpu=0 --dataset=pubmed --n-hidden=16 --aggregator-type=mean --inference --kernel=cuSPARSE # --log=simrand

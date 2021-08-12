@@ -1,5 +1,6 @@
 # training command
-python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=25 --kernel=cuSPARSE --S=0 --best-val 
+python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --log --n-hidden=128 --n-layers=7 --n-epochs=5 --n-runs=2 --kernel=cuSPARSE --S=0 --best-val 
+return
 
 python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=512 --best-val 
 python train_full.py --gpu=0 --dataset=reddit --aggregator-type=mean --train --log --n-hidden=256 --n-layers=1 --n-epochs=200 --n-runs=25 --kernel=CacheSampleV4 --S=1024 --best-val 
