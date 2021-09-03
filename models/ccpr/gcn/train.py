@@ -11,7 +11,7 @@ from dgl.data import register_data_args
 from dgl.data import CoraGraphDataset, CiteseerGraphDataset, PubmedGraphDataset
 from dgl.data import RedditDataset
 import os, sys
-sys.path.insert(1, os.path.join(sys.path[0], '..'))
+sys.path.insert(1, os.path.join(sys.path[0], '../..'))
 from model_utils import save_model, load_model, EarlyStopping, BestVal
 
 from gcn import GCN
@@ -106,13 +106,22 @@ def run(args, n_run, name_base):
     if args.inference:
         model_name = name_base + "_best.pt"
         model = load_model(args.dir, model, model_name)
-        loss, acc = evaluate(model, g, features, labels, test_mask, 
-                        norm, args.norm_bias, args.kernel, args.S)
-        print("Test accuracy {:.3%}".format(acc))
 
         num_run = 10
-        times = []
+        accs = []
+        for i in range(num_run):
+            t0 = time.time()
+            seed = int((t0 - math.floor(t0))*1e7)
+            loss, acc = evaluate(model, g, features, labels, test_mask, 
+                     norm, args.norm_bias, args.kernel, args.S, seed)
+            print("Test accuracy {:.3%}".format(acc))
+            accs.append(acc)
+        print()
+        print("Max Accuracy: {:.3%}".format(np.max(accs)))
+        print("Avg Accuracy: {:.3%}".format(np.mean(accs)))
 
+        num_run = 25
+        times = []
         with profiler.profile(use_cuda=True) as prof:
             for i in range(num_run):
                 t = inference(model, g, features, norm, args.norm_bias, 
@@ -120,10 +129,10 @@ def run(args, n_run, name_base):
                 times.append(t)
                 print("Inference time: {:.3f}".format(t))
         avg_t = np.mean(times[3:])*1000
+        print()
         print("Average inference time: {:.3f}".format(avg_t))
 
         # print(prof.key_averages().table(sort_by="cuda_time_total"))
-
         events = prof.key_averages()
         for evt in events:
             if evt.key == "GSpMM":
@@ -136,7 +145,7 @@ def run(args, n_run, name_base):
         print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
         # print("Avg GEMM CUDA kernel time (ms): {:.3f}".format(avg_mm_t+avg_matmul_t))
 
-        if args.log != "none":
+        if args.log == True:
             with open("./log/" + args.dataset + "_" + args.log + "_log.csv", 'a+') as f:
                 if args.cache_sample:
                     S = dgl_pytorch_sp.S
@@ -173,7 +182,7 @@ def run(args, n_run, name_base):
         seed = int((t0 - math.floor(t0))*1e7)
         # forward
         logits = model(g, features, norm=norm, norm_bias=args.norm_bias, 
-                        kernel=args.kernel, S=args.S, seed=seed)
+                    kernel=args.kernel, S=args.S, seed=seed, sample_rate=args.sr)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
 
         optimizer.zero_grad()
@@ -228,6 +237,8 @@ if __name__ == '__main__':
             help="gpu")
     parser.add_argument("--lr", type=float, default=1e-2,
             help="learning rate")
+    parser.add_argument("--sr", type=float, default=1.0,
+            help="edge sample rate")
     parser.add_argument("--n-runs", type=int, default=1,
             help="number of training runs")
     parser.add_argument("--n-epochs", type=int, default=200,
@@ -264,7 +275,7 @@ if __name__ == '__main__':
     parser.set_defaults(self_loop=False)
     args = parser.parse_args()
 
-    midle_dir = "{}_S{}".format(args.kernel, args.S)
+    midle_dir = "{}".format(args.kernel)
     # midle_dir = "cuSPARSE_S0"
     args.dir = args.dir + '/' + args.dataset + '/' + midle_dir 
     print(args)
@@ -275,8 +286,9 @@ if __name__ == '__main__':
     test_accs = []
     epoch_times = []
     if args.train:
+        model_name = name_base + "_{}_S_{}_sr".format(args.S, args.sr)
         for i in range(args.n_runs):
-            test_acc, epoch_t = run(args, i, name_base)
+            test_acc, epoch_t = run(args, i, model_name)
             test_accs.append(test_acc)
             epoch_times.append(epoch_t)
 
@@ -289,8 +301,8 @@ if __name__ == '__main__':
         if args.save_model or args.early_stop or args.best_val:
             best_idx = np.argmax(test_accs)
             print("best_idx: ", best_idx)
-            model_name = name_base 
-            cmd = "cp {}/{}_{}.pt {}/{}_best.pt".format(args.dir, model_name, best_idx, args.dir, model_name)
+            cmd = "cp {}/{}_{}.pt {}/{}_best.pt".format(args.dir, model_name, 
+                    best_idx, args.dir, model_name)
             print(cmd)
             os.system(cmd)
             for i in range(args.n_runs):
@@ -302,11 +314,13 @@ if __name__ == '__main__':
             log_path = "./log/{}".format(args.dataset)
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
-            log_name = "{}/gcn_{}_{}_S{}_train_log.csv".format(log_path, args.dataset, 
-                    args.kernel, args.S)
+            log_name = "{}/gcn_{}_{}_train_log.csv".format(log_path, 
+                    args.dataset, args.kernel)
             with open(log_name, 'a+') as f:
                 string = "n_layer, {}, ".format(args.n_layers + 1)
                 string += "n_hidden, {}, ".format(args.n_hidden)
+                string += "S, {}, ".format(args.S)
+                string += "sample_rate, {}, ".format(args.sr)
                 string += "best_acc, {:.3%}, ".format(np.max(test_accs))
                 string += "acc_std, {:.3%}, ".format(np.std(test_accs))
                 string += "mean_epoch_t, {:.3f}, ".format(np.mean(epoch_times))
