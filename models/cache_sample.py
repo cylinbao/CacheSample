@@ -2,26 +2,31 @@ import numpy as np
 import scipy.sparse as sp
 import time
 
-def sample_rand_coo(coo, rate):
-    if rate == 0:
+# def sample_rand_coo(coo, drop_rate, verbose=False):
+def sample_rand_coo(coo, sample_rate, verbose=False):
+    if sample_rate == 1.0:
         return coo
 
-    print("original nnz: ", coo.nnz)
+    if verbose:
+        print("original nnz: ", coo.nnz)
+
     t0 = time.time()
     row = coo.row
     col = coo.col
-    cut = int(row.shape[0]*rate)
-    idx = np.ones(row.shape[0], dtype="bool")
-    idx[:cut] = 0
+    cut = int(row.shape[0] * sample_rate)
+    idx = np.zeros(row.shape[0], dtype="bool")
+    idx[:cut] = 1
     np.random.shuffle(idx)
 
     _row = row[idx]
     _col = col[idx]
-    _data = coo.data[idx]
+    _data = np.ones(_row.shape[0], dtype=np.int32)
     _coo = sp.coo_matrix((_data, (_row, _col)), shape=coo.shape)
-    print("sampled nnz: ", _coo.nnz)
-    print("sampled rate: ", float(_coo.nnz)/float(coo.nnz))
-    print("random sampling takes {:.6f}s".format(time.time() - t0))
+
+    if verbose:
+        print("sampled nnz: ", _coo.nnz)
+        print("sampled rate: ", float(_coo.nnz)/float(coo.nnz))
+        print("random sampling takes {:.6f}s".format(time.time() - t0))
     return _coo
 
 def sample_uni_coo(coo, step):
