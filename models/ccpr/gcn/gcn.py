@@ -68,11 +68,11 @@ class GCNDropEdge(nn.Module):
         self.layers.append(GraphConv(n_hidden, n_classes)) #, norm=norm)) 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, g, features, norm='right', norm_bias=0, kernel='cuSPARSE', S=0, seed=None, drop_rate=0):
-        if drop_rate > 0:
+    def forward(self, g, features, norm='right', norm_bias=0, kernel='cuSPARSE', S=0, seed=None, sample_rate=1.0):
+        if sample_rate > 0:
             device = features.get_device()
             adj = g.adj(scipy_fmt="coo")
-            adj = sample_rand_coo(adj, drop_rate, verbose=True)
+            adj = sample_rand_coo(adj, sample_rate, verbose=True)
             g = dgl.from_scipy(adj, idtype=torch.int32, device=device)
             g = dgl.add_self_loop(g)
 
