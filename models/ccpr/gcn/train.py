@@ -27,6 +27,7 @@ def evaluate(model, g, features, labels, mask, norm_type='right',
         correct = torch.sum(indices == labels)
         acc = correct.item() * 1.0 / len(labels)
         loss = F.cross_entropy(logits, labels)
+        print("{:.4f}".format(acc))
         return loss.item(), acc
 
 # Run forward and return runtime
@@ -276,16 +277,15 @@ if __name__ == '__main__':
 
     name_base = "gcn_{}_{}_layer_{}_hidden".format(
                  args.dataset, args.n_layers, args.n_hidden)
+    model_name = name_base
+    if "CacheSample1" in args.kernel:
+        model_name = model_name + "_{}_S".format(args.S)
+    elif "CacheSample2" in args.kernel:
+        model_name = model_name + "_{}_sr".format(args.sr)
 
     test_accs = []
     epoch_times = []
     if args.train:
-        model_name = name_base
-        if "CacheSample1" in args.kernel:
-            model_name = model_name + "_{}_S".format(args.S)
-        elif "CacheSample2" in args.kernel:
-            model_name = model_name + "_{}_sr".format(args.sr)
-
         for i in range(args.n_runs):
             test_acc, epoch_t = run(args, i, model_name)
             test_accs.append(test_acc)
