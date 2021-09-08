@@ -16,11 +16,11 @@ from model_utils import save_model, load_model, EarlyStopping, BestVal
 
 from gcn import GCN, GCNDropEdge
 
-def evaluate(model, g, features, labels, mask, norm='right', norm_bias=0, 
-        kernel='cuSPARSE', S=0, seed=0):
+def evaluate(model, g, features, labels, mask, norm_type='right', 
+             norm_bias=0, kernel='cuSPARSE', S=0, seed=0):
     model.eval()
     with torch.no_grad():
-        logits = model(g, features, norm, norm_bias, kernel, S, seed)
+        logits = model(g, features, norm_type, norm_bias, kernel, S, seed)
         logits = logits[mask]
         labels = labels[mask]
         _, indices = torch.max(logits, dim=1)
@@ -30,17 +30,63 @@ def evaluate(model, g, features, labels, mask, norm='right', norm_bias=0,
         return loss.item(), acc
 
 # Run forward and return runtime
-def inference(model, g, features, norm='right', norm_bias=0, 
-        kernel='cuSPARSE', S=0, seed=0):
+def inference(model, g, features, norm_type='right', 
+              norm_bias=0, kernel='cuSPARSE', S=0, seed=0):
     model.eval()
     t0 = time.time()
     with torch.no_grad():
-        logits = model(g, features, norm, norm_bias, kernel, S, seed)
+        logits = model(g, features, norm_type, norm_bias, kernel, S, seed)
     torch.cuda.synchronize()
 
     return time.time() - t0
 
-def run(args, n_run, name_base):
+def prof_infer(args, name_base, model, g, features, labels, test_mask, norm_type):
+    model_name = name_base + "_best.pt"
+    model = load_model(args.dir, model, model_name)
+
+    accs = []
+    for i in range(args.n_runs):
+        t0 = time.time()
+        seed = int((t0 - math.floor(t0))*1e7)
+        loss, acc = evaluate(model, g, features, labels, test_mask, 
+                 norm_type, args.norm_bias, args.kernel, args.S, seed)
+        print("Test accuracy {:.3%}".format(acc))
+        accs.append(acc)
+    print()
+    max_acc = np.max(accs)
+    avg_acc = np.mean(accs)
+    print("Max Accuracy: {:.3%}".format(max_acc))
+    print("Avg Accuracy: {:.3%}".format(avg_acc))
+
+    args.n_runs = 25
+    times = []
+    with profiler.profile(use_cuda=True) as prof:
+        for i in range(args.n_runs):
+            t = inference(model, g, features, norm_type, args.norm_bias, 
+                    args.kernel, args.S)
+            times.append(t)
+            print("Inference time: {:.3f}".format(t))
+    avg_t = np.mean(times[3:])*1000
+    print()
+    print("Average inference time: {:.3f}".format(avg_t))
+
+    # print(prof.key_averages().table(sort_by="cuda_time_total"))
+    events = prof.key_averages()
+    avg_mm_t = 0
+    for evt in events:
+        if evt.key == "GSpMM":
+            avg_spmm_t = evt.cuda_time*evt.count/args.n_runs/1000
+        if evt.key == "aten::matmul":
+            avg_mm_t += evt.cuda_time*evt.count/args.n_runs/1000
+        if evt.key == "aten::mm":
+            avg_mm_t += evt.cuda_time*evt.count/args.n_runs/1000
+
+    print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
+    print("Avg GEMM CUDA kernel time (ms): {:.3f}".format(avg_mm_t))
+
+    return max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t 
+
+def run(args, run_i, model_name):
     # load and preprocess dataset
     if args.dataset == 'cora':
         data = CoraGraphDataset()
@@ -88,76 +134,27 @@ def run(args, n_run, name_base):
     g.ndata['norm'] = norm.unsqueeze(1)
 
     if args.kernel == "cuSPARSE":
-        norm = 'right'
+        norm_type = 'right'
     else:
-        norm = 'none'
+        norm_type = 'none'
 
-    # create GCN model with DropEdge
+    # create GCN model
     model = GCNDropEdge(in_feats,
-                         args.n_hidden,
-                         n_classes,
-                         args.n_layers,
-                         F.relu,
-                         args.dropout)
+                        args.n_hidden,
+                        n_classes,
+                        args.n_layers,
+                        F.relu,
+                        args.dropout)
 
     if cuda:
         model.cuda()
     
-    if args.inference:
-        model_name = name_base + "_best.pt"
-        model = load_model(args.dir, model, model_name)
-        
-        num_run = 10
-        accs = []
-        for i in range(num_run):
-            t0 = time.time()
-            seed = int((t0 - math.floor(t0))*1e7)
-            loss, acc = evaluate(model, g, features, labels, test_mask, 
-                     norm, args.norm_bias, args.kernel, args.S, seed)
-            print("Test accuracy {:.3%}".format(acc))
-            accs.append(acc)
-        print()
-        print("Max Accuracy: {:.3%}".format(np.max(accs)))
-        print("Avg Accuracy: {:.3%}".format(np.mean(accs)))
+    if args.prof_infer:
+        max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = prof_infer(
+                args, model_name, model, g, features, labels, test_mask, norm_type)
+        return max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t 
 
-        num_run = 25
-        times = []
-        with profiler.profile(use_cuda=True) as prof:
-            for i in range(num_run):
-                t = inference(model, g, features, norm, args.norm_bias, 
-                        args.kernel, args.S)
-                times.append(t)
-                print("Inference time: {:.3f}".format(t))
-        avg_t = np.mean(times[3:])*1000
-        print()
-        print("Average inference time: {:.3f}".format(avg_t))
-
-        # print(prof.key_averages().table(sort_by="cuda_time_total"))
-        events = prof.key_averages()
-        for evt in events:
-            if evt.key == "GSpMM":
-                # print(evt.self_cuda_time_total_str)
-                avg_spmm_t = evt.cuda_time*evt.count/num_run/1000
-            # if evt.key == "matmul":
-            #     avg_matmul_t = evt.cuda_time*evt.count/num_run/1000
-            # if evt.key == "mm":
-            #     avg_mm_t = evt.cuda_time*evt.count/num_run/1000
-        print("Avg GSpMM CUDA kernel time (ms): {:.3f}".format(avg_spmm_t))
-        # print("Avg GEMM CUDA kernel time (ms): {:.3f}".format(avg_mm_t+avg_matmul_t))
-
-        if args.log == True:
-            with open("./log/" + args.dataset + "_" + args.log + "_log.csv", 'a+') as f:
-                if args.cache_sample:
-                    S = dgl_pytorch_sp.S
-                else:
-                    S = 0
-                string = "S, {}, ".format(S)
-                string += "accuracy, {:.4f}, ".format(acc)
-                string += "avg cuda time, {:.3f}, ".format(avg_spmm_t)
-                string += "avg total time, {:.3f}".format(avg_t)
-                f.write(string + "\n")
-        return 
-
+    # perform training
     loss_fcn = torch.nn.CrossEntropyLoss()
 
     # use optimizer
@@ -166,7 +163,7 @@ def run(args, n_run, name_base):
                                  weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
 
-    model_name = name_base + "_{}.pt".format(n_run)
+    model_name = model_name + "_{}.pt".format(run_i)
     if args.early_stop is True:
         early_stop = EarlyStopping(path=args.dir, fname=model_name, verbose=False)
     if args.best_val is True:
@@ -181,8 +178,8 @@ def run(args, n_run, name_base):
         t0 = time.time()
         seed = int((t0 - math.floor(t0))*1e7)
         # forward
-        logits = model(g, features, norm=norm, norm_bias=args.norm_bias, 
-                       kernel=args.kernel, S=args.S, seed=seed , sample_rate=args.sr)
+        logits = model(g, features, norm_type=norm_type, norm_bias=args.norm_bias, 
+                    kernel=args.kernel, S=args.S, seed=seed, sample_rate=args.sr)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
 
         optimizer.zero_grad()
@@ -220,7 +217,6 @@ def run(args, n_run, name_base):
     print("Mean epoch time (ms): {:.3f}".format(epoch_t))
 
     if args.save_model:
-        model_name = name_base + "_{}.pt".format(n_run)
         save_model(args.dir, model, model_name)
 
     with torch.no_grad():
@@ -255,8 +251,8 @@ if __name__ == '__main__':
     #        help="setup norm strategy")
     parser.add_argument("--train", action='store_true',
             help="perform training")
-    parser.add_argument("--inference", action='store_true',
-            help="whether to just perform inference (default=False)")
+    parser.add_argument("--prof-infer", action='store_true',
+            help="profile inference performance(default=False)")
     parser.add_argument("--dir", type=str, default="./state_dicts",
             help="directory to store model's state dict")
     parser.add_argument("--save-model", action='store_true',
@@ -275,25 +271,22 @@ if __name__ == '__main__':
     parser.set_defaults(self_loop=False)
     args = parser.parse_args()
 
-    # midle_dir = "{}_S{}".format(args.kernel, args.S)
-    midle_dir = "{}".format(args.kernel)
-    # midle_dir = "cuSPARSE_S0"
-    args.dir = args.dir + '/' + args.dataset + '/' + midle_dir 
+    args.dir = args.dir + '/' + args.dataset + '/' + args.kernel 
+    args.dir += "_dropedge"
     print(args)
 
     name_base = "gcn_{}_{}_layer_{}_hidden".format(
                  args.dataset, args.n_layers, args.n_hidden)
 
-    # sample_rates = [0.3, 0.5, 0.7]
-    # sample_rates = [args.sr]
     test_accs = []
     epoch_times = []
     if args.train:
-        # for sr in sample_rates:
-        #     args.sr = sr
+        model_name = name_base
+        if args.S > 0:
+            model_name = model_name + "_{}_S".format(args.S)
+        if args.sr < 1.0:
+            model_name = model_name + "_{}_sr".format(args.sr)
 
-        # adding sample rate to the name
-        model_name = name_base + "_{}_sr".format(args.sr)
         for i in range(args.n_runs):
             test_acc, epoch_t = run(args, i, model_name)
             test_accs.append(test_acc)
@@ -321,11 +314,14 @@ if __name__ == '__main__':
             log_path = "./log/{}".format(args.dataset)
             if not os.path.exists(log_path):
                 os.makedirs(log_path)
+            # log_name = "{}/gcn_{}_{}_train_log.csv".format(log_path, 
+            #         args.dataset, args.kernel)
             log_name = "{}/gcn_{}_{}_train_dropedge_log.csv".format(log_path, 
                     args.dataset, args.kernel)
             with open(log_name, 'a+') as f:
                 string = "n_layer, {}, ".format(args.n_layers + 1)
                 string += "n_hidden, {}, ".format(args.n_hidden)
+                string += "S, {}, ".format(args.S)
                 string += "sample_rate, {}, ".format(args.sr)
                 string += "best_acc, {:.3%}, ".format(np.max(test_accs))
                 string += "acc_std, {:.3%}, ".format(np.std(test_accs))
@@ -333,5 +329,23 @@ if __name__ == '__main__':
                 string += "epoch_t_std, {:.3f}".format(np.std(epoch_times))
                 f.write(string + "\n")
 
-    if args.inference:
-        run(args, 0, name_base)
+    if args.prof_infer:
+        max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
+
+        if args.log:
+            log_path = "./log/{}".format(args.dataset)
+            if not os.path.exists(log_path):
+                os.makedirs(log_path)
+            log_name = "{}/gcn_{}_{}_infer_log.csv".format(log_path, 
+                    args.dataset, args.kernel)
+            with open(log_name, 'a+') as f:
+                string = "n_layer, {}, ".format(args.n_layers + 1)
+                string += "n_hidden, {}, ".format(args.n_hidden)
+                string += "S, {}, ".format(args.S)
+                string += "sample_rate, {}, ".format(args.sr)
+                string += "max_acc, {:.3%}, ".format(max_acc)
+                string += "avg_acc, {:.3%}, ".format(avg_acc)
+                string += "avg_epoch_t, {:.3f}, ".format(avg_t)
+                string += "avg_spmm_t, {:.3f}, ".format(avg_spmm_t)
+                string += "avg_mm_t, {:.3f}, ".format(avg_mm_t)
+                f.write(string + "\n")
