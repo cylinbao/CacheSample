@@ -21,7 +21,6 @@ import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 from model_utils import save_model, load_model, EarlyStopping, BestVal
 
-
 class GraphSAGE(nn.Module):
     def __init__(self,
                  in_feats,
@@ -130,9 +129,6 @@ def main(args, n_running, name_base):
                       F.relu,
                       args.dropout,
                       args.aggregator_type)
-                      # args.kernel,
-                      # args.S)
-                      # args.cache_sample)
 
     if cuda:
         model.cuda()
