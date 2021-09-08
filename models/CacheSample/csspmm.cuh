@@ -338,6 +338,54 @@ __global__ void CacheSample2_CSRSpMM_v1(
   }
 }
 
+// CacheSample2!! v2, starts caching, force adding self-loop
+__global__ void CacheSample2_CSRSpMM_v2(
+  const int p, const int o, const float sample_rate,
+  const int m, const int k, 
+  const int32_t* A_indptr, const int32_t* A_indices,
+  const float* B, float* C)
+{
+  extern __shared__ int sh[];
+  int sm_offset = threadIdx.y*blockDim.x;
+
+  int cid = blockIdx.y*blockDim.x + threadIdx.x;
+  int rid = blockIdx.x*blockDim.y + threadIdx.y;
+
+  int offset, ptr, r, x;
+  float acc = 0.0;
+
+  if (rid < m) {
+    int lb = A_indptr[rid];
+    int hb = A_indptr[(rid+1)];
+    int nnz = hb - lb;
+    int s_nnz = int(ceilf(nnz * sample_rate));
+    int s_hb = lb + s_nnz;
+
+    int nout = (k - cid + blockDim.x - 1) / blockDim.x;
+    for (int jj = lb; jj < s_hb; jj += blockDim.x) {
+      ptr = jj + threadIdx.x;
+      r = ((ptr*ptr) + o) % p;
+      x = (ptr <= p / 2) ? r : p - r;
+      offset = lb + (x % nnz);
+      sh[sm_offset + threadIdx.x] = A_indices[offset]*k;
+      __syncthreads();
+
+      for (int kk = 0; (kk < blockDim.x) && (jj+kk < s_hb); kk++) {
+        offset = sh[(sm_offset + kk)] + cid;
+        if (nout > 0) 
+          acc += B[offset];
+      }
+      __syncthreads();
+    }
+    offset = rid*k + cid;
+    if (nout > 0) {
+      // add self-loop
+      acc += B[offset];
+      C[offset] = acc/(s_nnz+1);
+    }
+  }
+}
+
 template<typename IdType>
 __global__ void SampleSpMM_FastRand(
   const int m, const int k, int s, int p,
@@ -573,6 +621,15 @@ void XCacheSampleCsrmm<int32_t, float>(
     }
     else if (kernel == "CacheSample2_V1") {
       CUDA_KERNEL_CALL(CacheSample2_CSRSpMM_v1, 
+        grid, block, shmem, 
+        thr_entry->stream, 
+        p, seed, sample_rate,
+        m, n, 
+        A_indptr, A_indices,
+        B_data, C_data);
+    }
+    else if (kernel == "CacheSample2_V2") {
+      CUDA_KERNEL_CALL(CacheSample2_CSRSpMM_v2, 
         grid, block, shmem, 
         thr_entry->stream, 
         p, seed, sample_rate,

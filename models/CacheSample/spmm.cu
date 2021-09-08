@@ -296,6 +296,8 @@ void CacheSampleCsrmm(
     shmem = DIM_X * DIM_Y * sizeof(int);
   else if (kernel == "CacheSample2_V1") 
     shmem = DIM_X * DIM_Y * sizeof(int);
+  else if (kernel == "CacheSample2_V2") 
+    shmem = DIM_X * DIM_Y * sizeof(int);
   else
     shmem = S * DIM_Y * sizeof(int);
 

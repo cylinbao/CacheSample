@@ -25,7 +25,8 @@ if __name__ == '__main__':
         data = PubmedGraphDataset()
         graph = data[0]
     elif args.dataset == 'reddit':
-    	data = RedditDataset(self_loop=True)
+        data = RedditDataset(self_loop=True)
+        graph = data[0]
     elif args.dataset == 'arxiv':
         data = DglNodePropPredDataset(name="ogbn-arxiv", root="/home/ubuntu/.ogb")
         graph, labels = data[0]
@@ -37,7 +38,8 @@ if __name__ == '__main__':
 
     adj = graph.adj(scipy_fmt="csr")
 
-    S = np.array([16,32,64,128,256,512,1024])
+    # S = np.array([128,256,512,768,1024,1280,1536])
+    S = np.array([2, 4, 8, 10, 12, 16, 24, 32])
 
     rates = []
     for s in S:

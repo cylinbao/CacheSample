@@ -2,7 +2,6 @@ import numpy as np
 import scipy.sparse as sp
 import time
 
-# def sample_rand_coo(coo, drop_rate, verbose=False):
 def sample_rand_coo(coo, sample_rate, verbose=False):
     if sample_rate == 1.0:
         return coo
