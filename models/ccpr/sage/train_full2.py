@@ -139,13 +139,9 @@ def run(args, run_i, model_name):
     else:
         norm_type = 'none'
 
+    g = dgl.remove_self_loop(g)
+
     # create model
-    # model = GCN(in_feats,
-    #             args.n_hidden,
-    #             n_classes,
-    #             args.n_layers,
-    #             F.relu,
-    #             args.dropout)
     model = GraphSAGE(in_feats,
                       args.n_hidden,
                       n_classes,
