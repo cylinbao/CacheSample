@@ -333,7 +333,7 @@ __global__ void CacheSample2_CSRSpMM_v1(
       __syncthreads();
     }
     offset = rid*k + cid;
-    if (nout > 0)
+    if ((nout > 0) && (s_nnz > 0))
       C[offset] = acc/s_nnz;
   }
 }
