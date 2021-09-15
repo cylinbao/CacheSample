@@ -1,5 +1,6 @@
 import torch
 import os
+import copy
 import numpy as np
 
 def save_model(path, model, fname):
@@ -66,20 +67,32 @@ class EarlyStopping:
         return torch.load(fname, map_location=f'cuda:{gpu}')
 
 class BestVal:
-    def __init__(self, path=None, fname=None):
-        self.val_loss_min = np.Inf
-        self.path = path
-        self.fname = fname
+    # def __init__(self, path=None, fname=None):
+        # self.val_loss_min = np.Inf
+        # self.path = path
+        # self.fname = fname
+    def __init__(self):
+        self.val_acc_max = 0
+        self.best_model = None
 
-    def __call__(self, val_loss, model):
-        if val_loss < self.val_loss_min:
-            self.val_loss_min = val_loss
-            self.save_checkpoint(model)
+    # def __call__(self, val_loss, model):
+    #     if val_loss < self.val_loss_min:
+    #         self.val_loss_min = val_loss
+    #         self.best_model = copy.deepcopy(model)
+    #         # self.save_checkpoint(model)
+    def __call__(self, val_acc, model):
+        if val_acc > self.val_acc_max:
+            self.val_acc_max = val_acc
+            self.best_model = copy.deepcopy(model)
+            # self.save_checkpoint(model)
 
-    def save_checkpoint(self, model):
-        '''Saves model when validation loss decrease.'''
-        save_model(self.path, model, self.fname)
+    def get_best(self):
+        return self.best_model
 
-    def load_checkpoint(self, gpu=0):
-        fname = os.path.join(self.path, self.fname)
-        return torch.load(fname, map_location=f'cuda:{gpu}')
+    # def save_checkpoint(self, model):
+    #     '''Saves model when validation loss decrease.'''
+    #     save_model(self.path, model, self.fname)
+
+    # def load_checkpoint(self, gpu=0):
+    #     fname = os.path.join(self.path, self.fname)
+    #     return torch.load(fname, map_location=f'cuda:{gpu}')
