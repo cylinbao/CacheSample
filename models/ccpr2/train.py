@@ -11,7 +11,7 @@ from dgl.data import RedditDataset
 from profile import evaluate, prof_infer, prof_train
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '../'))
-from model_utils import save_model, load_model, EarlyStopping, BestVal
+from model_utils import save_model, load_model, EarlyStopping, BestVal, Log
 
 from gcn import GCN
 from resgcn import ResGCN
@@ -252,6 +252,8 @@ if __name__ == '__main__':
 
     assert args.train ^ args.prof_train ^ args.prof_infer, "only one mode is allowed"
 
+    logger = Log()
+
     test_accs = []
     epoch_times = []
     if args.train:
@@ -266,7 +268,6 @@ if __name__ == '__main__':
         print(f"Average Test accuracy: {np.mean(test_accs):.3%} ± {np.std(test_accs):.3%}")
         print(f"Mean Epoch Time: {np.mean(epoch_times):.3f} ± {np.std(epoch_times):.3f}")
 
-        # if args.save_model or args.early_stop or args.best_val:
         if args.save_model:
             best_idx = np.argmax(test_accs)
             print("best_idx: ", best_idx)
@@ -281,63 +282,26 @@ if __name__ == '__main__':
 
         if args.log:
             log_path = "./train_log/{}".format(args.model_type)
-            if not os.path.exists(log_path):
-                os.makedirs(log_path)
             log_name = "{}/{}_{}_{}_train".format(log_path, args.model_type,
                     args.dataset, args.kernel)
-            if args.early_stop is True:
-                log_name = log_name + "_earlystop"
-            elif args.best_val is True:
-                log_name = log_name + "_bestval"
-            log_name = log_name + "_log.csv"
 
-            with open(log_name, 'a+') as f:
-                string = "n_layer, {}, ".format(args.n_layers + 1)
-                string += "n_hidden, {}, ".format(args.n_hidden)
-                string += "S, {}, ".format(args.S)
-                string += "sample_rate, {}, ".format(args.sr)
-                string += "best_acc, {:.3%}, ".format(np.max(test_accs))
-                string += "acc_std, {:.3%}, ".format(np.std(test_accs))
-                string += "mean_epoch_t, {:.3f}, ".format(np.mean(epoch_times))
-                string += "epoch_t_std, {:.3f}".format(np.std(epoch_times))
-                f.write(string + "\n")
+            logger.log_train(log_path, log_name, args, test_accs, epoch_times)
     elif args.prof_train:
         avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
 
         if args.log:
             log_path = "./prof_train/{}".format(args.model_type)
-            if not os.path.exists(log_path):
-                os.makedirs(log_path)
             log_name = "{}/{}_{}_{}_prof_train_log.csv".format(log_path, args.model_type,
                     args.dataset, args.kernel)
-            with open(log_name, 'a+') as f:
-                string = "n_layer, {}, ".format(args.n_layers + 1)
-                string += "n_hidden, {}, ".format(args.n_hidden)
-                string += "S, {}, ".format(args.S)
-                string += "sample_rate, {}, ".format(args.sr)
-                string += "avg_epoch_t, {:.3f}, ".format(avg_epoch_t)
-                string += "std_epoch_t, {:.3f}, ".format(std_epoch_t)
-                string += "avg_spmm_t, {:.3f}, ".format(avg_spmm_t)
-                string += "avg_mm_t, {:.3f}".format(avg_mm_t)
-                f.write(string + "\n")
 
+            logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
+                    avg_spmm_t, avg_mm_t)
     elif args.prof_infer:
         max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
 
         if args.log:
             log_path = "./prof_infer/{}".format(args.model_type)
-            if not os.path.exists(log_path):
-                os.makedirs(log_path)
             log_name = "{}/{}_{}_{}_infer_log.csv".format(log_path, args.model_type,
                     args.dataset, args.kernel)
-            with open(log_name, 'a+') as f:
-                string = "n_layer, {}, ".format(args.n_layers + 1)
-                string += "n_hidden, {}, ".format(args.n_hidden)
-                string += "S, {}, ".format(args.S)
-                string += "sample_rate, {}, ".format(args.sr)
-                string += "max_acc, {:.3%}, ".format(max_acc)
-                string += "avg_acc, {:.3%}, ".format(avg_acc)
-                string += "avg_epoch_t, {:.3f}, ".format(avg_t)
-                string += "avg_spmm_t, {:.3f}, ".format(avg_spmm_t)
-                string += "avg_mm_t, {:.3f}, ".format(avg_mm_t)
-                f.write(string + "\n")
+
+            logger.log_prof_infer(log_path, log_name, args, max_acc, avg_acc, avg_epoch_t, avg_spmm_t, avg_mm_t)
