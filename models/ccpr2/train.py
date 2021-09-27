@@ -13,10 +13,7 @@ import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '../'))
 from model_utils import save_model, load_model, EarlyStopping, BestVal, Log
 
-from gcn import GCN
-from resgcn import ResGCN
-from jknet import JKNet
-from sage import GraphSAGE
+from models import GCN, ResGCN, JKNet, GraphSAGE
 
 def run(args, run_i, model_name):
     # load and preprocess dataset
@@ -65,38 +62,36 @@ def run(args, run_i, model_name):
 
     g = dgl.remove_self_loop(g)
     # create GNN model
-    if args.model_type == "gcn":
+    if args.model == "gcn":
         model = GCN(n_feats,
                     args.n_hidden,
                     n_classes,
                     args.n_layers,
-                    F.relu,
                     args.dropout)
         g = dgl.add_self_loop(g)
-    elif args.model_type == "res": 
+    elif args.model == "res": 
         model = ResGCN(in_dim=n_feats,
                        hid_dim=args.n_hidden,
                        out_dim=n_classes,
                        num_layers=args.n_layers,
                        dropout=args.dropout)
         g = dgl.add_self_loop(g)
-    elif args.model_type == "jkn":
+    elif args.model == "jkn":
         model = JKNet(in_dim=n_feats,
                       hid_dim=args.n_hidden,
                       out_dim=n_classes,
                       num_layers=args.n_layers,
                       dropout=args.dropout)
         g = dgl.add_self_loop(g)
-    elif args.model_type == "sage": 
+    elif args.model == "sage": 
         model = GraphSAGE(n_feats,
                         args.n_hidden,
                         n_classes,
                         args.n_layers,
-                        F.relu,
                         args.dropout,
                         args.aggregator_type)
     else:
-        raise ValueError('Unknown model type: {}'.format(args.model_type))
+        raise ValueError('Unknown model type: {}'.format(args.model))
 
     if cuda:
         model.cuda()
@@ -131,9 +126,10 @@ def run(args, run_i, model_name):
 
         t0 = time.time()
         seed = int((t0 - math.floor(t0))*1e7)
+        # seed = 0
         # forward
-        logits = model(g, features, norm_type=norm_type, norm_bias=args.norm_bias, 
-                    kernel=args.kernel, S=args.S, seed=seed, sample_rate=args.sr)
+        logits = model(g, features, norm_type=norm_type, kernel=args.kernel, 
+                       S=args.S, seed=seed, sample_rate=args.sr)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
 
         optimizer.zero_grad()
@@ -144,7 +140,8 @@ def run(args, run_i, model_name):
         # if epoch >= 3:
         dur.append(time.time() - t0)
 
-        val_loss, val_acc = evaluate(model, g, features, labels, val_mask, 'right', 0, 'cuSPARSE',  0, 0)
+        val_loss, val_acc = evaluate(model, g, features, labels, val_mask, 
+                                     norm_type='right', kernel='cuSPARSE')
         print("Epoch {:05d} | Time(ms) {:.4f} | Train Loss {:.4f} | Val Loss {:.4f} | Accuracy {:.4f} ".format(epoch, dur[-1]*1000, loss.item(), val_loss, val_acc))
 
         if args.early_stop is True:
@@ -156,16 +153,18 @@ def run(args, run_i, model_name):
                 break
 
         if args.best_val is True:
-            best_val(val_acc, model)
-            # best_val(val_loss, model)
+            best_val(val_loss, model)
+            # best_val(val_acc, model)
 
     if args.best_val is True:
         model = best_val.get_best()
 
     print()
-    val_loss, val_acc = evaluate(model, g, features, labels, val_mask, 'right', 0, 'cuSPARSE', 0, 0)
+    val_loss, val_acc = evaluate(model, g, features, labels, val_mask, 
+                                 norm_type='right', kernel='cuSPARSE')
     print("Val Accuracy {:.5f}".format(val_acc))
-    test_loss, test_acc = evaluate(model, g, features, labels, test_mask, 'right', 0, 'cuSPARSE', 0, 0)
+    test_loss, test_acc = evaluate(model, g, features, labels, test_mask, 
+                                   norm_type='right', kernel='cuSPARSE')
     print("Test Accuracy {:.5f}".format(test_acc))
 
     epoch_t = np.mean(dur[3:])*1000
@@ -184,7 +183,7 @@ def run(args, run_i, model_name):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GCN')
     register_data_args(parser)
-    parser.add_argument("--model-type", type=str, default="gcn", 
+    parser.add_argument("--model", type=str, default="gcn", 
             help="model type, choose from [gcn, res, jkn, sage]")
     parser.add_argument("--aggregator-type", type=str, default="gcn",
             help="For GraphSAGE: Aggregator type: mean/gcn/pool/lstm")
@@ -228,9 +227,9 @@ if __name__ == '__main__':
             help="keep the best validation model")
     parser.add_argument("--log", action='store_true', help="log or not")
     parser.add_argument("--kernel", type=str, default="cuSPARSE",
-            help="Define kernel from cuSPARSE and CacheSample")
-    parser.add_argument("--norm-bias", type=int, default=0,
-            help="Define norm bias for CacheSample kernel")
+            help="Which SpMM kernel to use")
+    # parser.add_argument("--norm-bias", type=int, default=0,
+    #         help="Define norm bias for CacheSample kernel")
     parser.add_argument("--S", type=int, default=0,
             help="Define S value for CacheSample kernel")
     # parser.set_defaults(self_loop=False)
@@ -239,10 +238,10 @@ if __name__ == '__main__':
     # args.dir = args.dir + '/' + args.dataset 
     # args.dir = args.dir + '/' + args.dataset + '/' + args.kernel 
     # args.dir = args.dir + '/' + args.model_type + '/' + args.kernel 
-    args.dir = args.dir + '/' + args.model_type + '/' + args.dataset 
+    args.dir = args.dir + '/' + args.model + '/' + args.dataset 
     print(args)
 
-    name_base = "{}_{}_layer_{}_hidden_{}_{}".format(args.model_type,
+    name_base = "{}_{}_layer_{}_hidden_{}_{}".format(args.model,
                  args.dataset, args.n_layers, args.n_hidden, args.kernel)
     model_name = name_base
     if "CacheSample1" in args.kernel:
@@ -281,8 +280,8 @@ if __name__ == '__main__':
                 os.system(cmd)
 
         if args.log:
-            log_path = "./train_log/{}".format(args.model_type)
-            log_name = "{}/{}_{}_{}_train".format(log_path, args.model_type,
+            log_path = "./train_log/{}".format(args.model)
+            log_name = "{}/{}_{}_{}_train".format(log_path, args.model,
                     args.dataset, args.kernel)
 
             logger.log_train(log_path, log_name, args, test_accs, epoch_times)
@@ -290,8 +289,8 @@ if __name__ == '__main__':
         avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
 
         if args.log:
-            log_path = "./prof_train/{}".format(args.model_type)
-            log_name = "{}/{}_{}_{}_prof_train_log.csv".format(log_path, args.model_type,
+            log_path = "./prof_train/{}".format(args.model)
+            log_name = "{}/{}_{}_{}_prof_train_log.csv".format(log_path, args.model,
                     args.dataset, args.kernel)
 
             logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
@@ -300,8 +299,8 @@ if __name__ == '__main__':
         max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
 
         if args.log:
-            log_path = "./prof_infer/{}".format(args.model_type)
-            log_name = "{}/{}_{}_{}_infer_log.csv".format(log_path, args.model_type,
+            log_path = "./prof_infer/{}".format(args.model)
+            log_name = "{}/{}_{}_{}_infer_log.csv".format(log_path, args.model,
                     args.dataset, args.kernel)
 
             logger.log_prof_infer(log_path, log_name, args, max_acc, avg_acc, avg_epoch_t, avg_spmm_t, avg_mm_t)

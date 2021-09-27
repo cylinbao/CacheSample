@@ -9,10 +9,12 @@ sys.path.insert(1, os.path.join(sys.path[0], '../'))
 from model_utils import load_model
 
 def evaluate(model, g, features, labels, mask, norm_type='right', 
-             norm_bias=0, kernel='cuSPARSE', S=0, seed=0):
+             kernel='cuSPARSE', S=0, seed=0, sample_rate=1.0):
     model.eval()
     with torch.no_grad():
-        logits = model(g, features, norm_type, norm_bias, kernel, S, seed)
+        # logits = model(g, features, norm_type, kernel, S, seed)
+        logits = model(g, features, norm_type=norm_type, kernel=kernel, 
+                       S=S, sample_rate=sample_rate)
         logits = logits[mask]
         labels = labels[mask]
         _, indices = torch.max(logits, dim=1)
@@ -23,11 +25,13 @@ def evaluate(model, g, features, labels, mask, norm_type='right',
 
 # Run forward and return runtime
 def inference(model, g, features, norm_type='right', 
-              norm_bias=0, kernel='cuSPARSE', S=0, seed=0):
+              kernel='cuSPARSE', S=0, seed=0, sample_rate=1.0):
     model.eval()
     t0 = time.time()
     with torch.no_grad():
-        logits = model(g, features, norm_type, norm_bias, kernel, S, seed)
+        # logits = model(g, features, norm_type, kernel, S, seed)
+        logits = model(g, features, norm_type=norm_type, kernel=kernel, 
+                       S=S, seed=seed, sample_rate=sample_rate)
     torch.cuda.synchronize()
 
     return time.time() - t0
@@ -39,9 +43,12 @@ def prof_infer(args, name_base, model, g, features, labels, test_mask, norm_type
     accs = []
     for i in range(args.n_runs):
         t0 = time.time()
-        seed = int((t0 - math.floor(t0))*1e7)
+        # seed = int((t0 - math.floor(t0))*1e7)
+        seed = 0
         loss, acc = evaluate(model, g, features, labels, test_mask, 
-                 norm_type, args.norm_bias, args.kernel, args.S, seed)
+                 norm_type, args.kernel, args.S, seed)
+        # loss, acc = evaluate(model, g, features, labels, test_mask, 
+        #          norm_type, "cuSPARSE", args.S, seed)
         print("Test accuracy {:.3%}".format(acc))
         accs.append(acc)
     print()
@@ -50,12 +57,11 @@ def prof_infer(args, name_base, model, g, features, labels, test_mask, norm_type
     print("Max Accuracy: {:.3%}".format(max_acc))
     print("Avg Accuracy: {:.3%}".format(avg_acc))
 
-    args.n_runs = 50
+    # args.n_runs = 50
     times = []
     with profiler.profile(use_cuda=True) as prof:
         for i in range(args.n_runs):
-            t = inference(model, g, features, norm_type, args.norm_bias, 
-                    args.kernel, args.S)
+            t = inference(model, g, features, norm_type, args.kernel, args.S)
             times.append(t)
             # print("Inference time: {:.3f}".format(t))
     avg_t = np.mean(times[3:])*1000
@@ -90,8 +96,8 @@ def prof_train(args, model, g, features, train_mask, labels, norm_type):
         model.train()
 
         t0 = time.time()
-        logits = model(g, features, norm_type=norm_type, norm_bias=args.norm_bias, 
-                    kernel=args.kernel, S=args.S, sample_rate=args.sr)
+        logits = model(g, features, norm_type=norm_type, kernel=args.kernel, 
+                       S=args.S, sample_rate=args.sr)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
 
         optimizer.zero_grad()
@@ -107,8 +113,8 @@ def prof_train(args, model, g, features, train_mask, labels, norm_type):
     with profiler.profile(use_cuda=True) as prof:
         for e in range(args.n_epochs):
             model.train()
-            logits = model(g, features, norm_type=norm_type, norm_bias=args.norm_bias, 
-                        kernel=args.kernel, S=args.S, sample_rate=args.sr)
+            logits = model(g, features, norm_type=norm_type, kernel=args.kernel, 
+                           S=args.S, sample_rate=args.sr)
             loss = loss_fcn(logits[train_mask], labels[train_mask])
 
             optimizer.zero_grad()
