@@ -53,11 +53,17 @@ class BestVal:
     def __init__(self):
         self.val_loss_min = np.Inf
         self.best_model = None
+        self.best_val_acc = -1
 
     def __call__(self, val_loss, model):
         if val_loss < self.val_loss_min:
             self.val_loss_min = val_loss
             self.best_model = copy.deepcopy(model)
+
+    # def __call__(self, val_acc, model):
+    #     if val_acc > self.best_val_acc:
+    #         self.best_val_acc = val_acc
+    #         self.best_model = copy.deepcopy(model)
 
     def get_best(self):
         return self.best_model
