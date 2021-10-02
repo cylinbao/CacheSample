@@ -11,9 +11,18 @@ from dgl.data import RedditDataset
 from profile import evaluate, prof_infer, prof_train
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '../'))
-from model_utils import save_model, load_model, EarlyStopping, BestVal, Log
+from model_utils import drop_edge, save_model, load_model, EarlyStopping, BestVal, Log
+# from cache_sample import sample_rand_coo
 
 from models import GCN, ResGCN, JKNet, GraphSAGE
+
+# def drop_edge(graph, sample_rate, device=None):
+#     if sample_rate < 1.0:
+#         adj = graph.adj(scipy_fmt="coo")
+#         adj = sample_rand_coo(adj, sample_rate, verbose=False)
+#         g = dgl.from_scipy(adj, idtype=torch.int32, device=device)
+#         g = dgl.add_self_loop(g)
+#     return g
 
 def run(args, run_i, model_name):
     # load and preprocess dataset
@@ -97,13 +106,20 @@ def run(args, run_i, model_name):
         model.cuda()
     
     if args.prof_train is True:
-        avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t = prof_train(
+        if args.drop_edge is True:
+            avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t, max_sample_t = prof_train(args, model, g, features, train_mask, labels, norm_type)
+        else:
+            avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t = prof_train(
                 args, model, g, features, train_mask, labels, norm_type)
-        return avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t 
+        if args.drop_edge is True:
+            return avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t, max_sample_t 
+        else:
+            return avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t 
     elif args.prof_infer is True:
-        max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = prof_infer(
+        # max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = prof_infer(
+        acc, avg_t, avg_spmm_t, avg_mm_t = prof_infer(
                 args, model_name, model, g, features, labels, test_mask, norm_type)
-        return max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t 
+        return acc, avg_t, avg_spmm_t, avg_mm_t 
 
     # perform training
     loss_fcn = torch.nn.CrossEntropyLoss()
@@ -125,10 +141,14 @@ def run(args, run_i, model_name):
         model.train()
 
         t0 = time.time()
-        seed = int((t0 - math.floor(t0))*1e7)
         # seed = 0
-        # forward
-        logits = model(g, features, norm_type=norm_type, kernel=args.kernel, 
+        seed = int((t0 - math.floor(t0))*1e7)
+        if args.drop_edge is True:
+            _g = drop_edge(g, args.sr, device=features.get_device())
+            logits = model(_g, features, norm_type=norm_type, kernel=args.kernel, 
+                       S=args.S, seed=seed, sample_rate=args.sr)
+        else:
+            logits = model(g, features, norm_type=norm_type, kernel=args.kernel, 
                        S=args.S, seed=seed, sample_rate=args.sr)
         loss = loss_fcn(logits[train_mask], labels[train_mask])
 
@@ -168,7 +188,7 @@ def run(args, run_i, model_name):
     print("Test Accuracy {:.5f}".format(test_acc))
 
     epoch_t = np.mean(dur[3:])*1000
-    print("Total epoch time (ms): {:.3f}".format(np.sum(dur)))
+    print("Total epoch time (s): {:.3f}".format(np.sum(dur)))
     print("Mean epoch time (ms): {:.3f}".format(epoch_t))
 
     # if args.save_model or args.best_val or args.early_stop:
@@ -189,6 +209,8 @@ if __name__ == '__main__':
             help="For GraphSAGE: Aggregator type: mean/gcn/pool/lstm")
     parser.add_argument("--dropout", type=float, default=0.5,
             help="dropout probability")
+    parser.add_argument("--drop-edge", action='store_true',
+            help="drop edge in python")
     parser.add_argument("--gpu", type=int, default=-1,
             help="gpu")
     parser.add_argument("--lr", type=float, default=1e-2,
@@ -243,11 +265,17 @@ if __name__ == '__main__':
 
     name_base = "{}_{}_layer_{}_hidden_{}_{}".format(args.model,
                  args.dataset, args.n_layers, args.n_hidden, args.kernel)
+    # name_base = "{}_{}_layer_{}_hidden_{}_{}".format(args.model,
+    #              args.dataset, args.n_layers, args.n_hidden, "cuSPARSE")
+
+    if args.drop_edge is True:
+        name_base += "_dropedge"
+
     model_name = name_base
-    if "CacheSample1" in args.kernel:
-        model_name = model_name + "_S_{}".format(args.S)
-    elif "CacheSample2" in args.kernel:
-        model_name = model_name + "_sr_{}".format(args.sr)
+    # if "CacheSample1" in args.kernel:
+    #     model_name = model_name + "_S_{}".format(args.S)
+    # elif "CacheSample2" in args.kernel:
+    #     model_name = model_name + "_sr_{}".format(args.sr)
 
     assert args.train ^ args.prof_train ^ args.prof_infer, "only one mode is allowed"
 
@@ -283,24 +311,60 @@ if __name__ == '__main__':
             log_path = "./train_log/{}".format(args.model)
             log_name = "{}/{}_{}_{}_train".format(log_path, args.model,
                     args.dataset, args.kernel)
+            if args.drop_edge is True:
+                log_name += "_dropedge"
 
             logger.log_train(log_path, log_name, args, test_accs, epoch_times)
     elif args.prof_train:
-        avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
+        if args.drop_edge is True:
+            avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t, max_sample_t = run(args, 0, model_name)
+        else:
+            avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
 
         if args.log:
             log_path = "./prof_train/{}".format(args.model)
-            log_name = "{}/{}_{}_{}_prof_train_log.csv".format(log_path, args.model,
-                    args.dataset, args.kernel)
+            # log_name = "{}/{}_{}_{}_prof_train_log.csv".format(log_path, args.model,
+            #         args.dataset, args.kernel)
+            log_name = "{}/{}_{}_{}".format(log_path, args.model, args.dataset, 
+                                            args.kernel)
+            if args.drop_edge is True:
+                log_name += "_dropedge"
+            log_name += "_prof_train_log.csv"
 
-            logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
-                    avg_spmm_t, avg_mm_t)
+            if args.drop_edge is True:
+                logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
+                                    avg_spmm_t, avg_mm_t, avg_sample_t, max_sample_t)
+            else:
+                logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
+                                    avg_spmm_t, avg_mm_t)
     elif args.prof_infer:
-        max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
 
-        if args.log:
-            log_path = "./prof_infer/{}".format(args.model)
-            log_name = "{}/{}_{}_{}_infer_log.csv".format(log_path, args.model,
-                    args.dataset, args.kernel)
+        # max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
 
-            logger.log_prof_infer(log_path, log_name, args, max_acc, avg_acc, avg_epoch_t, avg_spmm_t, avg_mm_t)
+        if args.kernel == "cuSPARSE":
+            acc, avg_epoch_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
+
+            if args.log:
+                log_path = "./prof_infer/{}".format(args.model)
+                log_name = "{}/{}_{}_{}_infer_log.csv".format(log_path, args.model,
+                            args.dataset, args.kernel)
+
+                logger.log_prof_infer(log_path, log_name, args, acc, avg_epoch_t, avg_spmm_t, avg_mm_t)
+                # logger.log_prof_infer(log_path, log_name, args, max_acc, avg_acc, avg_epoch_t, avg_spmm_t, avg_mm_t)
+
+        else:
+            rates = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+            spmm_t = []
+            for sr in rates:
+                args.sr = sr
+                acc, avg_epoch_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
+                spmm_t.append(avg_spmm_t)
+
+                if args.log:
+                    log_path = "./prof_infer/{}".format(args.model)
+                    log_name = "{}/{}_{}_{}_infer_log.csv".format(log_path, args.model,
+                                args.dataset, args.kernel)
+
+                    logger.log_prof_infer(log_path, log_name, args, acc, avg_epoch_t, avg_spmm_t, avg_mm_t)
+
+            print(spmm_t)

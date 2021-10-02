@@ -28,7 +28,7 @@ class GCN(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, g, features, norm_type='right', norm_bias=0, kernel='cuSPARSE', 
-                S=0, seed=None, sample_rate=1.0):
+                S=0, seed=0, sample_rate=1.0):
         h = features
         for i, layer in enumerate(self.layers):
             if i != 0:
