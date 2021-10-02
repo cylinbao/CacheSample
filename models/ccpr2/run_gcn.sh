@@ -1,8 +1,17 @@
 # drop edge training command
 
-python train.py --gpu=0 --dataset=pubmed --model=gcn --n-hidden=64 --n-layers=3  --train --early-stop --patience=100 --n-epochs=1500 --n-runs=100 --kernel=cuSPARSE --drop-edge --sr=0.3 --log --save-model
-python train.py --gpu=0 --dataset=pubmed --model=gcn --n-hidden=64 --n-layers=3  --train --early-stop --patience=100 --n-epochs=1500 --n-runs=100 --kernel=cuSPARSE --drop-edge --sr=0.5 --log --save-model
-python train.py --gpu=0 --dataset=pubmed --model=gcn --n-hidden=64 --n-layers=3  --train --early-stop --patience=100 --n-epochs=1500 --n-runs=100 --kernel=cuSPARSE --drop-edge --sr=0.7 --log --save-model
+python train.py --gpu=0 --dataset=cora --model=gcn --n-hidden=128 --n-layers=3  --train --early-stop --patience=100 --n-epochs=1500 --n-runs=100 --kernel=cuSPARSE --drop-edge --sr=0.3 --log --save-model
+python train.py --gpu=0 --dataset=cora --model=gcn --n-hidden=128 --n-layers=3  --train --early-stop --patience=100 --n-epochs=1500 --n-runs=100 --kernel=cuSPARSE --drop-edge --sr=0.5 --log --save-model
+python train.py --gpu=0 --dataset=cora --model=gcn --n-hidden=128 --n-layers=3  --train --early-stop --patience=100 --n-epochs=1500 --n-runs=100 --kernel=cuSPARSE --drop-edge --sr=0.7 --log --save-model
+
+python train.py --gpu=0 --dataset=citeseer --model=gcn --n-hidden=128 --n-layers=3  --train --early-stop --patience=100 --n-epochs=1500 --n-runs=100 --kernel=cuSPARSE --drop-edge --sr=0.3 --log --save-model
+python train.py --gpu=0 --dataset=citeseer --model=gcn --n-hidden=128 --n-layers=3  --train --early-stop --patience=100 --n-epochs=1500 --n-runs=100 --kernel=cuSPARSE --drop-edge --sr=0.5 --log --save-model
+python train.py --gpu=0 --dataset=citeseer --model=gcn --n-hidden=128 --n-layers=3  --train --early-stop --patience=100 --n-epochs=1500 --n-runs=100 --kernel=cuSPARSE --drop-edge --sr=0.7 --log --save-model
+
+python train.py --gpu=1 --dataset=reddit --model=gcn --n-hidden=128 --n-layers=3  --train --best-val --n-epochs=200 --n-runs=20 --kernel=cuSPARSE --drop-edge --sr=0.3 --log --save-model
+python train.py --gpu=2 --dataset=reddit --model=gcn --n-hidden=128 --n-layers=3  --train --best-val --n-epochs=200 --n-runs=20 --kernel=cuSPARSE --drop-edge --sr=0.5 --log --save-model
+python train.py --gpu=3 --dataset=reddit --model=gcn --n-hidden=128 --n-layers=3  --train --best-val --n-epochs=200 --n-runs=20 --kernel=cuSPARSE --drop-edge --sr=0.7 --log --save-model
+
 return
 
 # profile cuSPARSE speedup with sampling
