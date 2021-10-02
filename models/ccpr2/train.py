@@ -12,17 +12,8 @@ from profile import evaluate, prof_infer, prof_train
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '../'))
 from model_utils import drop_edge, save_model, load_model, EarlyStopping, BestVal, Log
-# from cache_sample import sample_rand_coo
 
 from models import GCN, ResGCN, JKNet, GraphSAGE
-
-# def drop_edge(graph, sample_rate, device=None):
-#     if sample_rate < 1.0:
-#         adj = graph.adj(scipy_fmt="coo")
-#         adj = sample_rand_coo(adj, sample_rate, verbose=False)
-#         g = dgl.from_scipy(adj, idtype=torch.int32, device=device)
-#         g = dgl.add_self_loop(g)
-#     return g
 
 def run(args, run_i, model_name):
     # load and preprocess dataset
@@ -317,14 +308,12 @@ if __name__ == '__main__':
             logger.log_train(log_path, log_name, args, test_accs, epoch_times)
     elif args.prof_train:
         if args.drop_edge is True:
-            avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t, max_sample_t = run(args, 0, model_name)
+            avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t = run(args, 0, model_name)
         else:
             avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
 
         if args.log:
             log_path = "./prof_train/{}".format(args.model)
-            # log_name = "{}/{}_{}_{}_prof_train_log.csv".format(log_path, args.model,
-            #         args.dataset, args.kernel)
             log_name = "{}/{}_{}_{}".format(log_path, args.model, args.dataset, 
                                             args.kernel)
             if args.drop_edge is True:
@@ -333,14 +322,12 @@ if __name__ == '__main__':
 
             if args.drop_edge is True:
                 logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
-                                    avg_spmm_t, avg_mm_t, avg_sample_t, max_sample_t)
+                                    avg_spmm_t, avg_mm_t, avg_sample_t)
             else:
                 logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
                                     avg_spmm_t, avg_mm_t)
     elif args.prof_infer:
-
         # max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
-
         if args.kernel == "cuSPARSE":
             acc, avg_epoch_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
 

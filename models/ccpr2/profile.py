@@ -112,11 +112,14 @@ def prof_train(args, model, g, features, train_mask, labels, norm_type):
         seed = int((t0 - math.floor(t0))*1e7)
 
         if args.drop_edge is True:
-            g = drop_edge(g, args.sr, device=features.get_device())
+            _g = drop_edge(g, args.sr, device=features.get_device())
             sample_t.append(time.time() - t0)
-
-        logits = model(g, features, norm_type=norm_type, kernel=args.kernel, 
+            logits = model(_g, features, norm_type=norm_type, kernel=args.kernel, 
                        S=args.S, seed=seed, sample_rate=args.sr)
+        else:
+            logits = model(g, features, norm_type=norm_type, kernel=args.kernel, 
+                       S=args.S, seed=seed, sample_rate=args.sr)
+
         loss = loss_fcn(logits[train_mask], labels[train_mask])
 
         optimizer.zero_grad()
@@ -124,16 +127,13 @@ def prof_train(args, model, g, features, train_mask, labels, norm_type):
         optimizer.step()
         torch.cuda.synchronize()
         dur.append(time.time() - t0)
-    print(dur)
 
     avg_epoch_t = np.mean(dur[5:]) * 1000
     std_epoch_t = np.std(dur[5:]) * 1000
     avg_sample_t = np.mean(sample_t) * 1000
-    max_sample_t = np.max(sample_t) * 1000
     print("Avg Epoch Time (ms): {:.3f}".format(avg_epoch_t))
     if args.drop_edge is True:
         print("Avg Sampling Time (ms): {:.3f}".format(avg_sample_t))
-        print("Max Sampling Time (ms): {:.3f}".format(max_sample_t))
 
     with profiler.profile(use_cuda=True) as prof:
         if args.drop_edge is True:
@@ -172,6 +172,6 @@ def prof_train(args, model, g, features, train_mask, labels, norm_type):
     print("Avg GEMM CUDA Time (ms): {:.3f}".format(avg_mm_t))
 
     if args.drop_edge is True:
-        return avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t, max_sample_t
+        return avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t
     else:
         return avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t

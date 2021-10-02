@@ -118,7 +118,6 @@ class Log:
             string += "avg_mm_t, {:.3f}, ".format(avg_mm_t)
             if args.drop_edge is True:
                 string += "avg_sample_t, {:.3f}, ".format(avg_sample_t)
-                string += "max_sample_t, {:.3f}, ".format(max_sample_t)
 
             f.write(string + "\n")
 
