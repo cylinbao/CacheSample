@@ -1,5 +1,5 @@
 // Uncomment this line to choose between FastRand or Bucket 
-#define USE_FASTRAND
+// #define USE_FASTRAND
 // #define USE_BUCKET
 
 namespace dgl {
@@ -295,7 +295,9 @@ __global__ void CacheSample2_CSRSpMM_v0(
 
 // CacheSample2!! v1, starts caching
 __global__ void CacheSample2_CSRSpMM_v1(
-  const int p, const int o, const float sample_rate,
+  const int p, const int o, 
+  const float sample_rate,
+  // const int norm_bias,
   const int m, const int k, 
   const int32_t* A_indptr, const int32_t* A_indices,
   const float* B, float* C)
@@ -322,6 +324,7 @@ __global__ void CacheSample2_CSRSpMM_v1(
       r = ((ptr*ptr) + o) % p;
       x = (ptr <= p / 2) ? r : p - r;
       offset = lb + (x % nnz);
+      // offset = ptr;
       sh[sm_offset + threadIdx.x] = A_indices[offset]*k;
       __syncthreads();
 
@@ -383,6 +386,52 @@ __global__ void CacheSample2_CSRSpMM_v2(
       acc += B[offset];
       C[offset] = acc/(s_nnz+1);
     }
+  }
+}
+
+// CacheSample2!! v3
+__global__ void CacheSample2_CSRSpMM_v3(
+  const int p, const int o, 
+  const float sample_rate,
+  // const int norm_bias,
+  const int m, const int k, 
+  const int32_t* A_indptr, const int32_t* A_indices,
+  const float* B, float* C)
+{
+  extern __shared__ int sh[];
+  int sm_offset = threadIdx.y*blockDim.x;
+
+  int cid = blockIdx.y*blockDim.x + threadIdx.x;
+  int rid = blockIdx.x*blockDim.y + threadIdx.y;
+
+  int offset, ptr, r, x;
+  float acc = 0.0;
+
+  if (rid < m) {
+    int lb = A_indptr[rid];
+    int hb = A_indptr[(rid+1)];
+    int nnz = hb - lb;
+    int s_nnz = int(ceilf(nnz * sample_rate));
+    int s_hb = lb + s_nnz;
+
+    int nout = (k - cid + blockDim.x - 1) / blockDim.x;
+    for (int jj = 0; jj < s_nnz; jj += blockDim.x) {
+      ptr = jj + threadIdx.x;
+      ptr = int(ptr / sample_rate);
+      offset = lb + ptr;
+      sh[sm_offset + threadIdx.x] = A_indices[offset]*k;
+      __syncthreads();
+
+      for (int kk = 0; (kk < blockDim.x) && (jj+kk < s_nnz); kk++) {
+        offset = sh[(sm_offset + kk)] + cid;
+        if (nout > 0) 
+          acc += B[offset];
+      }
+      __syncthreads();
+    }
+    offset = rid*k + cid;
+    if ((nout > 0) && (s_nnz > 0))
+      C[offset] = acc/s_nnz;
   }
 }
 
@@ -563,7 +612,7 @@ void XCacheSampleCsrmm<int32_t, float>(
   }
   else {
     // if (kernel.substr(11, 2) == "V0") {
-    if (kernel == "CacheSample_V0") {
+    if (kernel == "CacheSample1_V0") {
       CUDA_KERNEL_CALL(CacheSample_CSRSpMM_v0, 
         grid, block, shmem, 
         thr_entry->stream, 
@@ -572,7 +621,7 @@ void XCacheSampleCsrmm<int32_t, float>(
         A_indptr, A_indices,
         B_data, C_data);
     }
-    else if (kernel == "CacheSample_V1") {
+    else if (kernel == "CacheSample1_V1") {
       CUDA_KERNEL_CALL(CacheSample_CSRSpMM_v1, 
         grid, block, shmem, 
         thr_entry->stream, 
@@ -581,7 +630,7 @@ void XCacheSampleCsrmm<int32_t, float>(
         A_indptr, A_indices,
         B_data, C_data);
     }
-    else if (kernel == "CacheSample_V2") {
+    else if (kernel == "CacheSample1_V2") {
       p = primes[seed % 10];
 
       CUDA_KERNEL_CALL(CacheSample_CSRSpMM_v2, 
@@ -592,7 +641,7 @@ void XCacheSampleCsrmm<int32_t, float>(
         A_indptr, A_indices,
         B_data, C_data);
     }
-    else if (kernel == "CacheSample_V3") {
+    else if (kernel == "CacheSample1_V3") {
       CUDA_KERNEL_CALL(CacheSample_CSRSpMM_v3, 
         grid, block, shmem, 
         thr_entry->stream, 
@@ -601,7 +650,7 @@ void XCacheSampleCsrmm<int32_t, float>(
         A_indptr, A_indices,
         B_data, C_data);
     }
-    else if (kernel == "CacheSample_V4") {
+    else if (kernel == "CacheSample1_V4") {
       CUDA_KERNEL_CALL(CacheSample_CSRSpMM_v4, 
         grid, block, shmem, 
         thr_entry->stream, 
@@ -623,7 +672,8 @@ void XCacheSampleCsrmm<int32_t, float>(
       CUDA_KERNEL_CALL(CacheSample2_CSRSpMM_v1, 
         grid, block, shmem, 
         thr_entry->stream, 
-        p, seed, sample_rate,
+        p, seed, 
+        sample_rate, // norm_bias,
         m, n, 
         A_indptr, A_indices,
         B_data, C_data);
@@ -637,12 +687,23 @@ void XCacheSampleCsrmm<int32_t, float>(
         A_indptr, A_indices,
         B_data, C_data);
     }
+    else if (kernel == "CacheSample2_V3") {
+      CUDA_KERNEL_CALL(CacheSample2_CSRSpMM_v3, 
+        grid, block, shmem, 
+        thr_entry->stream, 
+        p, seed, 
+        sample_rate, // norm_bias,
+        m, n, 
+        A_indptr, A_indices,
+        B_data, C_data);
+    }
     else {
       LOG(FATAL) << "Unsupported CacheSample Version.";
     }
   }
   
   cudaStreamSynchronize(thr_entry->stream);
+  // cudaDeviceSynchronize();
 }
 
 template <typename IdType, typename DType>
