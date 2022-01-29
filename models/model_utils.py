@@ -4,6 +4,7 @@ import copy
 import numpy as np
 import dgl
 from cache_sample import sample_rand_coo
+import time
 
 def drop_edge(g, sample_rate, device=None):
     if sample_rate < 1.0:
@@ -29,8 +30,8 @@ def save_model(path, model, fname):
 def load_model(path, model, fname, gpu=0):
     print("Loading model's state_dict", path + '/' + fname)
     fname = os.path.join(path, fname)
-    # model.load_state_dict(torch.load(fname, map_location=f'cuda:{gpu}'))
-    model.load_state_dict(torch.load(fname))
+    model.load_state_dict(torch.load(fname, map_location=f'cuda:{gpu}'))
+    # model.load_state_dict(torch.load(fname))
     return model
 
 class EarlyStopping:
@@ -103,7 +104,7 @@ class Log:
             f.write(string + "\n")
 
     def log_prof_train(self, log_path, log_name, args, avg_epoch_t, std_epoch_t, 
-                       avg_spmm_t, avg_mm_t, avg_sample_t=0, max_sample_t=0):
+                       avg_spmm_t, avg_mm_t, avg_sample_t=0):
         if not os.path.exists(log_path):
             os.makedirs(log_path)
 
@@ -116,12 +117,9 @@ class Log:
             string += "std_epoch_t, {:.3f}, ".format(std_epoch_t)
             string += "avg_spmm_t, {:.3f}, ".format(avg_spmm_t)
             string += "avg_mm_t, {:.3f}, ".format(avg_mm_t)
-            if args.drop_edge is True:
-                string += "avg_sample_t, {:.3f}, ".format(avg_sample_t)
-
+            string += "avg_sample_t, {:.3f}".format(avg_sample_t)
             f.write(string + "\n")
 
-    # def log_prof_infer(self, log_path, log_name, args, max_acc, avg_acc, avg_epoch_t, 
     def log_prof_infer(self, log_path, log_name, args, acc, avg_epoch_t, avg_spmm_t, 
                        avg_mm_t):
         if not os.path.exists(log_path):
@@ -132,8 +130,6 @@ class Log:
             string += "n_hidden, {}, ".format(args.n_hidden)
             string += "S, {}, ".format(args.S)
             string += "sample_rate, {}, ".format(args.sr)
-            # string += "max_acc, {:.3%}, ".format(max_acc)
-            # string += "avg_acc, {:.3%}, ".format(avg_acc)
             string += "acc, {:.3%}, ".format(acc)
             string += "avg_epoch_t, {:.3f}, ".format(avg_epoch_t)
             string += "avg_spmm_t, {:.3f}, ".format(avg_spmm_t)

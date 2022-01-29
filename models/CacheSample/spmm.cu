@@ -242,7 +242,7 @@ void CusparseCsrmm2(
       C_data, n));
   device->FreeWorkspace(ctx, trans_out);
 
-  cudaStreamSynchronize(thr_entry->stream);
+  // cudaStreamSynchronize(thr_entry->stream);
   // cudaDeviceSynchronize();
 }
 

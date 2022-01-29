@@ -25,7 +25,7 @@ def sample_rand_coo(coo, sample_rate, verbose=False):
     if verbose:
         print("sampled nnz: ", _coo.nnz)
         print("sampled rate: ", float(_coo.nnz)/float(coo.nnz))
-        print("random sampling takes {:.6f}s".format(time.time() - t0))
+        print("random sampling takes {:.3f}ms".format((time.time() - t0)*1000))
     return _coo
 
 def sample_uni_coo(coo, step):

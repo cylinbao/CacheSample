@@ -97,17 +97,10 @@ def run(args, run_i, model_name):
         model.cuda()
     
     if args.prof_train is True:
-        if args.drop_edge is True:
-            avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t, max_sample_t = prof_train(args, model, g, features, train_mask, labels, norm_type)
-        else:
-            avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t = prof_train(
-                args, model, g, features, train_mask, labels, norm_type)
-        if args.drop_edge is True:
-            return avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t, max_sample_t 
-        else:
-            return avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t 
+        avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t = prof_train(args, model, g, features, train_mask, labels, norm_type)
+
+        return avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t 
     elif args.prof_infer is True:
-        # max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = prof_infer(
         acc, avg_t, avg_spmm_t, avg_mm_t = prof_infer(
                 args, model_name, model, g, features, labels, test_mask, norm_type)
         return acc, avg_t, avg_spmm_t, avg_mm_t 
@@ -248,19 +241,16 @@ if __name__ == '__main__':
     # parser.set_defaults(self_loop=False)
     args = parser.parse_args()
 
-    # args.dir = args.dir + '/' + args.dataset 
-    # args.dir = args.dir + '/' + args.dataset + '/' + args.kernel 
-    # args.dir = args.dir + '/' + args.model_type + '/' + args.kernel 
-    args.dir = args.dir + '/' + args.model + '/' + args.dataset 
+    args.dir = args.dir + '/' + args.model + '/' + args.dataset
     print(args)
 
+    # name_base = "{}_{}_layer_{}_hidden_{}_{}_gpu_{}".format(args.model,
+    #              args.dataset, args.n_layers, args.n_hidden, args.kernel, args.gpu)
     name_base = "{}_{}_layer_{}_hidden_{}_{}".format(args.model,
-                 args.dataset, args.n_layers, args.n_hidden, args.kernel)
-    # name_base = "{}_{}_layer_{}_hidden_{}_{}".format(args.model,
-    #              args.dataset, args.n_layers, args.n_hidden, "cuSPARSE")
+                 args.dataset, args.n_layers, args.n_hidden, "cuSPARSE")
 
     if args.drop_edge is True:
-        name_base += "_dropedge"
+        name_base += "_dropedge_sr_{:2d}".format(int(args.sr*100))
 
     model_name = name_base
     # if "CacheSample1" in args.kernel:
@@ -307,27 +297,45 @@ if __name__ == '__main__':
 
             logger.log_train(log_path, log_name, args, test_accs, epoch_times)
     elif args.prof_train:
-        if args.drop_edge is True:
+        # avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t = run(args, 0, model_name)
+        # if args.log:
+        #     log_path = "./prof_train/{}".format(args.model)
+        #     log_name = "{}/{}_{}_{}".format(log_path, args.model, args.dataset, 
+        #                                     args.kernel)
+        #     if args.drop_edge is True:
+        #         log_name += "_dropedge"
+        #     log_name += "_prof_train_log.csv"
+
+        #     logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
+        #                           avg_spmm_t, avg_mm_t, avg_sample_t)
+        
+        if args.kernel == "cuSPARSE" and args.drop_edge is False:
             avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t = run(args, 0, model_name)
+            if args.log:
+                log_path = "./prof_train/{}".format(args.model)
+                log_name = "{}/{}_{}_{}".format(log_path, args.model, args.dataset, 
+                                                args.kernel)
+                log_name += "_prof_train_log.csv"
+
+                logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
+                                      avg_spmm_t, avg_mm_t, avg_sample_t)
         else:
-            avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
+            # rates = [0.3, 0.5, 0.7]
+            rates = [0.5]
+            for sr in rates:
+                args.sr = sr
+                avg_epoch_t, std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t = run(args, 0, model_name)
+                if args.log:
+                    log_path = "./prof_train/{}".format(args.model)
+                    log_name = "{}/{}_{}_{}".format(log_path, args.model, args.dataset, 
+                                                    args.kernel)
+                    if args.drop_edge is True:
+                        log_name += "_dropedge"
+                    log_name += "_prof_train_log.csv"
 
-        if args.log:
-            log_path = "./prof_train/{}".format(args.model)
-            log_name = "{}/{}_{}_{}".format(log_path, args.model, args.dataset, 
-                                            args.kernel)
-            if args.drop_edge is True:
-                log_name += "_dropedge"
-            log_name += "_prof_train_log.csv"
-
-            if args.drop_edge is True:
-                logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
-                                    avg_spmm_t, avg_mm_t, avg_sample_t)
-            else:
-                logger.log_prof_train(log_path, log_name, args, avg_epoch_t, std_epoch_t, 
-                                    avg_spmm_t, avg_mm_t)
+                    logger.log_prof_train(log_path, log_name, args, avg_epoch_t, 
+                                    std_epoch_t, avg_spmm_t, avg_mm_t, avg_sample_t)
     elif args.prof_infer:
-        # max_acc, avg_acc, avg_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
         if args.kernel == "cuSPARSE":
             acc, avg_epoch_t, avg_spmm_t, avg_mm_t = run(args, 0, model_name)
 
@@ -337,10 +345,8 @@ if __name__ == '__main__':
                             args.dataset, args.kernel)
 
                 logger.log_prof_infer(log_path, log_name, args, acc, avg_epoch_t, avg_spmm_t, avg_mm_t)
-                # logger.log_prof_infer(log_path, log_name, args, max_acc, avg_acc, avg_epoch_t, avg_spmm_t, avg_mm_t)
-
         else:
-            rates = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+            rates = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
             spmm_t = []
             for sr in rates:
                 args.sr = sr
